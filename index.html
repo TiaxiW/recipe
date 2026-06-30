@@ -177,6 +177,18 @@
     .page-btn.active { background: linear-gradient(135deg, #f57c00, #ff9800); color: #fff; border-color: #f57c00; }
     .page-btn.disabled { opacity: 0.35; cursor: default; pointer-events: none; }
     .page-info { font-size: 13px; color: #8b6914; margin: 0 8px; }
+    /* 菜品勾选 */
+    .recipe-check { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #e0c080; cursor: pointer; transition: all 0.25s cubic-bezier(0.4,0,0.2,1); flex-shrink: 0; background: #fffef7; font-size: 16px; }
+    .recipe-check:hover { border-color: #f57c00; transform: scale(1.15); }
+    .recipe-check.checked { background: linear-gradient(135deg, #f57c00, #ff9800); border-color: #f57c00; color: #fff; animation: popIn 0.3s ease; }
+    @keyframes popIn { 0%{transform:scale(0.6)} 60%{transform:scale(1.2)} 100%{transform:scale(1)} }
+    .recipe-card { position:relative; }
+    .recipe-card .check-wrap { position:absolute; top:14px; right:14px; }
+    /* 浮动选中栏 */
+    .float-cook-bar { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:100; display:flex; align-items:center; gap:12px; background: linear-gradient(135deg,#e65100,#f57c00); color:#fff; padding:12px 24px; border-radius:50px; box-shadow:0 6px 30px rgba(230,81,0,0.4); cursor:pointer; font-weight:700; font-size:15px; transition:all 0.3s; animation: pulse 2s ease-in-out infinite; }
+    .float-cook-bar:hover { transform:translateX(-50%) translateY(-3px); box-shadow:0 8px 36px rgba(230,81,0,0.5); }
+    @keyframes pulse { 0%,100%{box-shadow:0 6px 30px rgba(230,81,0,0.4)} 50%{box-shadow:0 6px 40px rgba(230,81,0,0.7)}}
+    .float-cook-bar .count-badge { background:rgba(255,255,255,0.25); padding:2px 10px; border-radius:20px; font-size:13px; }
     /* 响应式 */
     @media (max-width: 640px) {
       .row { flex-direction: column; }
@@ -2826,9 +2838,7 @@
       if (currentPage < 1) currentPage = 1;
       const selected = allRecipes.slice((currentPage - 1) * perPage, currentPage * perPage);
 
-      const total = calculateNutrition(selected);
-      const { warnings, suggestions } = analyzeNutrition(total, goal);
-      const aiMessages = generateAIAdvice(allRecipes, total, goal, health, taste, healthManual, goalManual, tasteManual, typeManual);
+      const aiMessages = generateAIAdvice(allRecipes, null, goal, health, taste, healthManual, goalManual, tasteManual, typeManual);
 
       // 菜谱列表
       const recipeList = document.getElementById('recipeList');
@@ -2848,6 +2858,9 @@
         const searchTerms = encodeURIComponent(r.name.replace(/[()（）]/g,'') + ',中餐,家常菜,料理');
         return `
           <div class="recipe-card" onclick="expandRecipe(this, window._selectedRecipes[${idx}])">
+            <div class="check-wrap" onclick="event.stopPropagation();toggleCookSelect('${r.name}')">
+              <div class="recipe-check" id="check_${r.name.replace(/[^a-zA-Z\u4e00-\u9fa5]/g,'_')}">✓</div>
+            </div>
             <h3>${r.name}</h3>
             <div class="recipe-meta">
               <span class="meta-match">${userIngredients.length > 0 ? '匹配度' : '推荐指数'} ${matchPct}%</span>
@@ -2870,32 +2883,18 @@
         `<div class="message ai-msg">${m}</div>`
       ).join('');
 
-      // 营养总览
-      document.getElementById('nutritionSummary').innerHTML = `
-        <div class="summary-item"><div class="num">${total.calories}</div><div class="unit">热量 kcal</div></div>
-        <div class="summary-item"><div class="num">${total.protein}g</div><div class="unit">蛋白质</div></div>
-        <div class="summary-item"><div class="num">${total.carbs}g</div><div class="unit">碳水</div></div>
-        <div class="summary-item"><div class="num">${total.fat}g</div><div class="unit">脂肪</div></div>
-        <div class="summary-item"><div class="num">${total.fiber}g</div><div class="unit">纤维</div></div>
-        <div class="summary-item"><div class="num">${total.vitaminC}mg</div><div class="unit">维生素C</div></div>`;
-
-      // 营养进度条
-      const barNames = { calories: '热量', protein: '蛋白质', carbs: '碳水', fat: '脂肪', fiber: '纤维', vitaminC: '维生素C' };
-      const colors = { calories: '#e74c3c', protein: '#3498db', carbs: '#f39c12', fat: '#e67e22', fiber: '#27ae60', vitaminC: '#9b59b6' };
-      document.getElementById('nutritionBars').innerHTML = Object.keys(total).map(k => {
-        const pct = Math.min(100, Math.round((total[k] / dailyGoals[k]) * 100));
-        return `<div class="nutrition-bar"><span class="label">${barNames[k]}</span><div class="bar"><div class="fill" style="width:${pct}%;background:${colors[k]}"></div></div><span class="value">${pct}%</span></div>`;
-      }).join('');
-
-      // 警告和建议
-      document.getElementById('warnings').innerHTML = warnings.map(w => `<div class="warning">⚠️ ${w}</div>`).join('');
-      document.getElementById('suggestions').innerHTML = suggestions.map(s => `<div class="suggestion">💡 ${s}</div>`).join('');
+      // 营养总览（初始隐藏，勾选后点击"我要烹饪"显示）
+      document.getElementById('nutritionSummary').innerHTML =
+        '<p style="text-align:center;padding:20px;color:#bf8040;font-size:14px">👆 勾选上方想做的菜品，<br>点击底部 <b>"🍳 我要烹饪"</b> 按钮查看营养总览</p>';
+      document.getElementById('nutritionBars').innerHTML = '';
+      document.getElementById('warnings').innerHTML = '';
+      document.getElementById('suggestions').innerHTML = '';
 
       document.getElementById('resultCard').classList.remove('hidden');
       document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth' });
     }
 
-    function generate() { _cachedConstraints = null; window._manualRules = null; currentPage = 1; render(); }
+    function generate() { _cachedConstraints = null; window._manualRules = null; currentPage = 1; selectedForCook.clear(); var fb = document.getElementById('floatCookBar'); if (fb) fb.remove(); render(); }
 
     // ===== 菜品搜索 =====
     var _searchSelectedRecipe = null;
@@ -2919,6 +2918,7 @@
           return;
         }
         // 直接进入该菜谱
+        selectedForCook.clear(); var fb = document.getElementById('floatCookBar'); if (fb) fb.remove();
         const r = matches[0];
         _searchSelectedRecipe = r;
         dropdown.style.display = 'none';
@@ -2928,12 +2928,7 @@
         document.getElementById('aiMessages').innerHTML =
           '<div class="message ai-msg"><span class="ai-name">🔍 菜品搜索：</span>已为您找到 <b>' + r.name + '</b>（' + r.type + ' · ' + r.taste + ' · ' + r.difficulty + ' · ' + r.time + '分钟）</div>';
         document.getElementById('nutritionSummary').innerHTML =
-          '<div class="summary-item"><div class="num">' + r.nutrition.calories + '</div><div class="unit">热量 kcal</div></div>' +
-          '<div class="summary-item"><div class="num">' + r.nutrition.protein + 'g</div><div class="unit">蛋白质</div></div>' +
-          '<div class="summary-item"><div class="num">' + r.nutrition.carbs + 'g</div><div class="unit">碳水</div></div>' +
-          '<div class="summary-item"><div class="num">' + r.nutrition.fat + 'g</div><div class="unit">脂肪</div></div>' +
-          '<div class="summary-item"><div class="num">' + r.nutrition.fiber + 'g</div><div class="unit">纤维</div></div>' +
-          '<div class="summary-item"><div class="num">' + r.nutrition.vitaminC + 'mg</div><div class="unit">维生素C</div></div>';
+          '<p style="text-align:center;padding:20px;color:#bf8040;font-size:14px">👆 勾选菜品后点击底部 <b>"🍳 我要烹饪"</b> 查看营养总览</p>';
         document.getElementById('nutritionBars').innerHTML = '';
         document.getElementById('warnings').innerHTML = '';
         document.getElementById('suggestions').innerHTML = '';
@@ -2965,6 +2960,8 @@
     function renderSearchRecipe(r) {
       window._selectedRecipes = [r];
       return '<div class="recipe-card" onclick="expandRecipe(this, window._selectedRecipes[0])">' +
+        '<div class="check-wrap" onclick="event.stopPropagation();toggleCookSelect(\'' + r.name.replace(/'/g, "\\'") + '\')">' +
+        '<div class="recipe-check" id="check_' + r.name.replace(/[^a-zA-Z\u4e00-\u9fa5]/g,'_') + '">✓</div></div>' +
         '<h3>' + r.name + '</h3>' +
         '<div class="recipe-meta">' +
         '<span class="recipe-tag">' + r.taste + '</span>' +
@@ -2975,6 +2972,80 @@
         '<div class="expand-hint">👆 点击查看详细步骤和视频教程</div>' +
         '<div class="recipe-detail"></div>' +
         '</div>';
+    }
+
+    // ===== 烹饪勾选系统 =====
+    var selectedForCook = new Set();
+
+    function toggleCookSelect(name) {
+      var id = 'check_' + name.replace(/[^a-zA-Z\u4e00-\u9fa5]/g, '_');
+      var el = document.getElementById(id);
+      if (!el) return;
+      if (selectedForCook.has(name)) {
+        selectedForCook.delete(name);
+        el.classList.remove('checked');
+        el.textContent = '✓';
+      } else {
+        selectedForCook.add(name);
+        el.classList.add('checked');
+        el.textContent = '✔';
+      }
+      renderCookBar();
+    }
+
+    function renderCookBar() {
+      var existing = document.getElementById('floatCookBar');
+      if (existing) existing.remove();
+      if (selectedForCook.size === 0) return;
+
+      var bar = document.createElement('div');
+      bar.id = 'floatCookBar';
+      bar.className = 'float-cook-bar';
+      bar.innerHTML = '🍳 <span class="count-badge">' + selectedForCook.size + '道</span> 我要烹饪！';
+      bar.onclick = cookSelected;
+      document.body.appendChild(bar);
+    }
+
+    function cookSelected() {
+      var selectedRecipes = [];
+      // 收集所有菜谱（从当前页 + 搜索结果 + 全库中匹配名字）
+      var allDisplayed = (window._allRecipes || []).concat(window._selectedRecipes || []);
+      selectedForCook.forEach(function(name) {
+        var found = allDisplayed.find(function(r) { return r.name === name; });
+        if (!found) {
+          found = recipes.find(function(r) { return r.name === name; });
+        }
+        if (found) selectedRecipes.push(found);
+      });
+
+      if (selectedRecipes.length === 0) return;
+
+      var total = { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, vitaminC: 0 };
+      selectedRecipes.forEach(function(r) {
+        Object.keys(total).forEach(function(k) { total[k] += r.nutrition[k]; });
+      });
+
+      document.getElementById('nutritionSummary').innerHTML =
+        '<div class="summary-item"><div class="num">' + total.calories + '</div><div class="unit">热量 kcal</div></div>' +
+        '<div class="summary-item"><div class="num">' + total.protein + 'g</div><div class="unit">蛋白质</div></div>' +
+        '<div class="summary-item"><div class="num">' + total.carbs + 'g</div><div class="unit">碳水</div></div>' +
+        '<div class="summary-item"><div class="num">' + total.fat + 'g</div><div class="unit">脂肪</div></div>' +
+        '<div class="summary-item"><div class="num">' + total.fiber + 'g</div><div class="unit">纤维</div></div>' +
+        '<div class="summary-item"><div class="num">' + total.vitaminC + 'mg</div><div class="unit">维生素C</div></div>';
+
+      var barNames = { calories:'热量',protein:'蛋白质',carbs:'碳水',fat:'脂肪',fiber:'纤维',vitaminC:'维生素C' };
+      var colors = { calories:'#e74c3c',protein:'#3498db',carbs:'#f39c12',fat:'#e67e22',fiber:'#27ae60',vitaminC:'#9b59b6' };
+      document.getElementById('nutritionBars').innerHTML = Object.keys(total).map(function(k) {
+        var pct = Math.min(100, Math.round((total[k] / dailyGoals[k]) * 100));
+        return '<div class="nutrition-bar"><span class="label">' + barNames[k] + '</span><div class="bar"><div class="fill" style="width:' + pct + '%;background:' + colors[k] + '"></div></div><span class="value">' + pct + '%</span></div>';
+      }).join('');
+
+      document.getElementById('warnings').innerHTML = '';
+      document.getElementById('suggestions').innerHTML = '';
+      document.getElementById('aiMessages').innerHTML =
+        '<div class="message ai-msg"><span class="ai-name">🍳 烹饪结算：</span>已勾选 <b>' + selectedRecipes.length + ' 道菜</b>（' + selectedRecipes.map(function(r){return r.name;}).join('、') + '），营养数据如上。</div>';
+
+      document.getElementById('resultCard').scrollIntoView({ behavior:'smooth' });
     }
 
     // 点击其他地方关闭搜索下拉
