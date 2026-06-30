@@ -195,6 +195,17 @@
       <p>输入食材，AI 为您推荐美味又健康的菜谱</p>
     </header>
 
+    <div style="max-width:900px;margin:0 auto 12px;padding:0 20px;position:relative;z-index:2">
+      <div style="display:flex;gap:8px">
+        <input type="text" id="recipeSearch" placeholder="🔍 搜索菜名（如：红烧肉、佛跳墙、番茄炒蛋...）"
+          style="flex:1;font-size:15px;padding:12px 16px;border-radius:12px;border:2px solid #f0d9a0;background:#fffef7"
+          oninput="searchRecipes()"
+          onkeydown="if(event.key==='Enter')searchRecipes(true)">
+        <button class="btn btn-primary" onclick="searchRecipes(true)" style="font-size:14px;white-space:nowrap">🔍 搜索</button>
+      </div>
+      <div id="searchDropdown" style="display:none;position:absolute;left:20px;right:20px;max-height:300px;overflow-y:auto;background:#fffef7;border:2px solid #f57c00;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.15);z-index:10;margin-top:4px"></div>
+    </div>
+
     <div class="card">
       <h2>📋 用户信息</h2>
       <!-- 健康状态 -->
@@ -2885,6 +2896,93 @@
     }
 
     function generate() { _cachedConstraints = null; window._manualRules = null; currentPage = 1; render(); }
+
+    // ===== 菜品搜索 =====
+    var _searchSelectedRecipe = null;
+    function searchRecipes(commit) {
+      const input = document.getElementById('recipeSearch');
+      const dropdown = document.getElementById('searchDropdown');
+      const query = input.value.trim();
+
+      if (!query) {
+        dropdown.style.display = 'none';
+        return;
+      }
+
+      // 模糊匹配所有菜谱名
+      const q = query.toLowerCase();
+      const matches = recipes.filter(r => r.name.toLowerCase().includes(q)).slice(0, 15);
+
+      if (commit) {
+        if (matches.length === 0) {
+          alert('未找到匹配的菜谱');
+          return;
+        }
+        // 直接进入该菜谱
+        const r = matches[0];
+        _searchSelectedRecipe = r;
+        dropdown.style.display = 'none';
+        document.getElementById('resultCard').classList.remove('hidden');
+        document.getElementById('recipeList').innerHTML = renderSearchRecipe(r);
+        document.getElementById('pagination').innerHTML = '<span class="page-info">🔍 搜索结果</span>';
+        document.getElementById('aiMessages').innerHTML =
+          '<div class="message ai-msg"><span class="ai-name">🔍 菜品搜索：</span>已为您找到 <b>' + r.name + '</b>（' + r.type + ' · ' + r.taste + ' · ' + r.difficulty + ' · ' + r.time + '分钟）</div>';
+        document.getElementById('nutritionSummary').innerHTML =
+          '<div class="summary-item"><div class="num">' + r.nutrition.calories + '</div><div class="unit">热量 kcal</div></div>' +
+          '<div class="summary-item"><div class="num">' + r.nutrition.protein + 'g</div><div class="unit">蛋白质</div></div>' +
+          '<div class="summary-item"><div class="num">' + r.nutrition.carbs + 'g</div><div class="unit">碳水</div></div>' +
+          '<div class="summary-item"><div class="num">' + r.nutrition.fat + 'g</div><div class="unit">脂肪</div></div>' +
+          '<div class="summary-item"><div class="num">' + r.nutrition.fiber + 'g</div><div class="unit">纤维</div></div>' +
+          '<div class="summary-item"><div class="num">' + r.nutrition.vitaminC + 'mg</div><div class="unit">维生素C</div></div>';
+        document.getElementById('nutritionBars').innerHTML = '';
+        document.getElementById('warnings').innerHTML = '';
+        document.getElementById('suggestions').innerHTML = '';
+        document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth' });
+        // 自动展开详情
+        setTimeout(function() {
+          var card = document.querySelector('.recipe-card');
+          if (card) expandRecipe(card, r);
+        }, 100);
+      } else {
+        // 显示下拉建议
+        if (matches.length === 0) {
+          dropdown.innerHTML = '<div style="padding:12px 16px;color:#bf8040">未找到匹配菜谱</div>';
+        } else {
+          dropdown.innerHTML = matches.map(r =>
+            '<div onclick="selectSearchRecipe(\'' + r.name.replace(/'/g, "\\'") + '\')" style="padding:10px 16px;cursor:pointer;font-size:14px;border-bottom:1px solid #f5e1c0;transition:background 0.15s" onmouseover="this.style.background=\'#fff3e0\'" onmouseout="this.style.background=\'\'"><b>' + r.name + '</b> <span style="color:#bf8040;font-size:12px">' + r.type + ' · ' + r.taste + ' · ' + r.time + '分钟</span></div>'
+          ).join('');
+        }
+        dropdown.style.display = 'block';
+      }
+    }
+
+    function selectSearchRecipe(name) {
+      document.getElementById('recipeSearch').value = name;
+      document.getElementById('searchDropdown').style.display = 'none';
+      searchRecipes(true);
+    }
+
+    function renderSearchRecipe(r) {
+      window._selectedRecipes = [r];
+      return '<div class="recipe-card" onclick="expandRecipe(this, window._selectedRecipes[0])">' +
+        '<h3>' + r.name + '</h3>' +
+        '<div class="recipe-meta">' +
+        '<span class="recipe-tag">' + r.taste + '</span>' +
+        '<span class="meta-difficulty">' + r.difficulty + '</span>' +
+        '<span class="meta-time">' + r.time + ' 分钟</span>' +
+        '</div>' +
+        '<div class="recipe-ingredients">' + r.ingredients.join('、') + '</div>' +
+        '<div class="expand-hint">👆 点击查看详细步骤和视频教程</div>' +
+        '<div class="recipe-detail"></div>' +
+        '</div>';
+    }
+
+    // 点击其他地方关闭搜索下拉
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('#searchDropdown') && !e.target.closest('#recipeSearch')) {
+        document.getElementById('searchDropdown').style.display = 'none';
+      }
+    });
 
     // ===== 背景装饰：随机浮动食材 =====
     (function initBgDecor() {
