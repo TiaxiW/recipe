@@ -717,12 +717,23 @@
       if (e.key === 'Enter') addIngredient();
     });
 
-    // 统一标签切换逻辑：每个 select-group 内单选
+    // 统一标签切换逻辑：每个 select-group 内多选，"正常"/"不限制"/"均衡饮食"为独占选项
     document.querySelectorAll('.select-group').forEach(group => {
       group.addEventListener('click', function(e) {
         if (e.target.classList.contains('select-option')) {
-          group.querySelectorAll('.select-option').forEach(o => o.classList.remove('active'));
-          e.target.classList.add('active');
+          const val = e.target.dataset.value;
+          const isDefault = val === '正常' || val === '不限制' || val === '均衡饮食';
+          if (isDefault) {
+            group.querySelectorAll('.select-option').forEach(o => o.classList.remove('active'));
+            e.target.classList.add('active');
+          } else {
+            const defaults = group.querySelectorAll('.select-option[data-value="正常"], .select-option[data-value="不限制"], .select-option[data-value="均衡饮食"]');
+            defaults.forEach(d => d.classList.remove('active'));
+            e.target.classList.toggle('active');
+            if (group.querySelectorAll('.select-option.active').length === 0) {
+              defaults.forEach(d => d.classList.add('active'));
+            }
+          }
         }
       });
     });
@@ -886,103 +897,372 @@
       };
     }
 
+    // ===== 硬过滤引擎：基于目标+健康状态真正筛掉不合格菜谱 =====
+    function applyHardFilters(recipes, goal, health) {
+      const rules = []; // 收集应用的规则用于展示
+
+      // ── 健康禁忌硬排除 ──
+      if (health.includes('痛风')) {
+        const before = recipes.length;
+        const highPurine = ['牛肉','猪肉','羊肉','虾','蟹','蛤','蛤蜊','扇贝','三文鱼','带鱼','鱿鱼','蛏子','海参','金枪鱼','螃蟹','鱼头','鱼','大肠','鸭血','啤酒','酒酿'];
+        recipes = recipes.filter(r => {
+          if (r.type === '海鲜') return false;
+          return !highPurine.some(k => r.ingredients.join('').includes(k));
+        });
+        rules.push(`🚫 痛风：排除${before - recipes.length}道高嘌呤菜（海鲜+红肉+内脏）`);
+      }
+      if (health.includes('糖尿病')) {
+        const before = recipes.length;
+        recipes = recipes.filter(r => r.nutrition.carbs < 40 && r.taste !== '甜口');
+        rules.push(`🚫 糖尿病：排除${before - recipes.length}道高碳水/甜口菜`);
+      }
+      if (health.includes('高血压')) {
+        const before = recipes.length;
+        recipes = recipes.filter(r => r.taste !== '麻辣' && r.taste !== '重口味');
+        rules.push(`🚫 高血压：排除${before - recipes.length}道麻辣/重口味菜`);
+      }
+      if (health.includes('高血脂')) {
+        const before = recipes.length;
+        recipes = recipes.filter(r => r.nutrition.fat < 28 && r.taste !== '麻辣' && r.taste !== '重口味');
+        rules.push(`🚫 高血脂：排除${before - recipes.length}道高脂菜`);
+      }
+      if (health.includes('花生过敏')) {
+        const before = recipes.length;
+        recipes = recipes.filter(r => !r.ingredients.join('').includes('花生'));
+        rules.push(`🚫 花生过敏：排除${before - recipes.length}道含花生菜`);
+      }
+      if (health.includes('海鲜过敏')) {
+        const before = recipes.length;
+        const seafood = ['虾','蟹','蛤','蛤蜊','扇贝','鱿鱼','三文鱼','带鱼','鲈鱼','草鱼','鲤鱼','海参','蛏子','金枪鱼','螃蟹','鱼头','鱼'];
+        recipes = recipes.filter(r => {
+          if (r.type === '海鲜') return false;
+          return !seafood.some(k => r.ingredients.join('').includes(k));
+        });
+        rules.push(`🚫 海鲜过敏：排除${before - recipes.length}道海鲜菜`);
+      }
+      if (health.includes('乳糖不耐受')) {
+        const before = recipes.length;
+        const dairy = ['牛奶','奶油','奶酪','芝士','黄油','酸奶','椰奶'];
+        recipes = recipes.filter(r => !dairy.some(k => (r.name+r.ingredients.join(',')).includes(k)));
+        rules.push(`🚫 乳糖不耐受：排除${before - recipes.length}道含乳制品菜`);
+      }
+      if (health.includes('麸质过敏')) {
+        const before = recipes.length;
+        const gluten = ['面粉','面条','面包','意大利面','吐司','乌冬面'];
+        recipes = recipes.filter(r => !gluten.some(k => r.ingredients.join('').includes(k)));
+        rules.push(`🚫 麸质过敏：排除${before - recipes.length}道含麸质菜`);
+      }
+      if (health.includes('孕期')) {
+        const before = recipes.length;
+        recipes = recipes.filter(r => {
+          if (r.type === '日韩') {
+            const ings = r.ingredients.join('');
+            if (ings.includes('生') || ings.includes('刺身')) return false;
+          }
+          const alcohol = ['啤酒','料酒','黄酒','酒酿','咖啡','茶'];
+          return !alcohol.some(k => r.ingredients.join('').includes(k));
+        });
+        rules.push(`🚫 孕期：排除${before - recipes.length}道含酒精/生食菜`);
+      }
+      if (health.includes('哺乳期')) {
+        const before = recipes.length;
+        const avoid = ['啤酒','料酒','黄酒','酒酿','咖啡'];
+        recipes = recipes.filter(r => !avoid.some(k => r.ingredients.join('').includes(k)));
+        rules.push(`🚫 哺乳期：排除${before - recipes.length}道含酒精/咖啡因菜`);
+      }
+
+      // ── 饮食目标硬过滤 ──
+      let beforeGoal = recipes.length;
+      if (goal.includes('减脂')) {
+        recipes = recipes.filter(r => r.nutrition.calories < 380 && r.taste !== '麻辣' && r.taste !== '重口味');
+      }
+      if (goal.includes('控糖')) {
+        recipes = recipes.filter(r => r.nutrition.carbs < 32 && r.taste !== '甜口');
+      }
+      if (goal.includes('增肌') || goal.includes('高蛋白')) {
+        recipes = recipes.filter(r => r.nutrition.protein >= 15);
+      }
+      if (goal.includes('低钠')) {
+        recipes = recipes.filter(r => r.taste === '清淡');
+      }
+      if (goal.includes('高纤维')) {
+        recipes = recipes.filter(r => r.nutrition.fiber >= 2);
+      }
+      if (recipes.length < beforeGoal) {
+        rules.push(`🎯 饮食目标：从${beforeGoal}进一步筛至${recipes.length}道`);
+      }
+
+      if (recipes.length === 0) {
+        rules.push('⚠️ 当前条件过于严格，已无匹配菜谱，建议放宽条件');
+      }
+
+      // 将规则存到 window 以便 AI 消息使用
+      window._filterRules = rules;
+      return recipes;
+    }
+
     function filterRecipes(userIngredients, goal, taste, dishType) {
+      const cs = getConstraints();
+      const health = getSelectedTags('healthTags');
       let matched = recipes.map(r => matchRecipe(r, userIngredients));
       // 必须有至少1个核心食材真正命中
       matched = matched.filter(r => r._coreMatched > 0);
-      // 菜品类型硬过滤：选了类型就只出那一类
-      if (dishType && dishType !== '不限制') {
-        matched = matched.filter(r => r.type === dishType);
+      // 硬排除：手动输入中的过敏/禁忌食材
+      if (cs.excludeKeywords.length > 0) {
+        const before = matched.length;
+        matched = matched.filter(r => {
+          const allIngText = r.ingredients.join('');
+          return !cs.excludeKeywords.some(kw => allIngText.includes(kw));
+        });
+        if (before !== matched.length) {
+          window._manualRules = window._manualRules || [];
+          window._manualRules.push(`🔍 语义硬排除：${before - matched.length}道菜被剔除（禁忌食材匹配）`);
+        }
       }
+      // 硬排除：手动输入中的疾病禁忌口味
+      if (cs.excludeTastes.length > 0) {
+        const before = matched.length;
+        matched = matched.filter(r => !cs.excludeTastes.includes(r.taste));
+        if (before !== matched.length) {
+          window._manualRules = window._manualRules || [];
+          window._manualRules.push(`🔍 语义硬排除：${before - matched.length}道菜被剔除（禁忌口味：${cs.excludeTastes.join('、')}）`);
+        }
+      }
+      // 硬排除：手动输入中的疾病禁忌类型
+      if (cs.excludeTypes.length > 0) {
+        const before = matched.length;
+        matched = matched.filter(r => !cs.excludeTypes.includes(r.type));
+        if (before !== matched.length) {
+          window._manualRules = window._manualRules || [];
+          window._manualRules.push(`🔍 语义硬排除：${before - matched.length}道菜被剔除（禁忌类型：${cs.excludeTypes.join('、')}）`);
+        }
+      }
+      // 硬排除：忌酒精
+      if (cs.excludeAlcohol) {
+        const before = matched.length;
+        const alcoholKw = ['啤酒','料酒','黄酒','酒酿','米酒'];
+        matched = matched.filter(r => !alcoholKw.some(k => r.ingredients.join('').includes(k)));
+        if (before !== matched.length) {
+          window._manualRules = window._manualRules || [];
+          window._manualRules.push(`🔍 语义硬排除：${before - matched.length}道含酒精菜被剔除`);
+        }
+      }
+      // 菜品类型硬过滤：选了类型就只出那些类
+      const hasType = dishType && dishType.length > 0 && !dishType.includes('不限制');
+      if (hasType) {
+        matched = matched.filter(r => dishType.includes(r.type));
+      }
+      // 手动约束：优先类型
+      cs.preferType.forEach(pt => {
+        matched.forEach(r => { if (r.type === pt) r.matchRate += 0.06; });
+      });
       // 口味偏好加权
-      if (taste && taste !== '不限制') {
-        matched.forEach(r => { if (r.taste === taste) r.matchRate += 0.08; });
+      const hasTaste = taste && taste.length > 0 && !taste.includes('不限制');
+      if (hasTaste) {
+        matched.forEach(r => { if (taste.includes(r.taste)) r.matchRate += 0.08; });
       }
+      // 手动约束：优先口味
+      cs.preferTaste.forEach(pt => {
+        matched.forEach(r => { if (r.taste === pt) r.matchRate += 0.06; });
+      });
       // 健康目标加权
-      if (goal === '减脂' || goal === '控糖') {
+      if (goal.some(g => g === '减脂' || g === '控糖')) {
         matched.forEach(r => {
           if (r.taste === '清淡') r.matchRate += 0.05;
           if (r.taste === '麻辣' || r.taste === '重口味') r.matchRate -= 0.05;
         });
       }
+      // 手动健康目标加权
+      if (cs.preferLowFat) {
+        matched.forEach(r => {
+          if (r.nutrition.fat < 14) r.matchRate += 0.08;
+          if (r.nutrition.fat > 28) r.matchRate -= 0.05;
+        });
+      }
+      if (cs.preferHighProtein) {
+        matched.forEach(r => {
+          if (r.nutrition.protein >= 25) r.matchRate += 0.08;
+          else if (r.nutrition.protein >= 18) r.matchRate += 0.04;
+        });
+      }
+      if (cs.preferLowCarb) {
+        matched.forEach(r => {
+          if (r.nutrition.carbs < 12) r.matchRate += 0.08;
+          else if (r.nutrition.carbs < 20) r.matchRate += 0.04;
+        });
+      }
+      if (cs.preferLowSodium || cs.preferLight) {
+        matched.forEach(r => { if (r.taste === '清淡') r.matchRate += 0.08; });
+      }
+      if (cs.preferHighFiber) {
+        matched.forEach(r => {
+          if (r.nutrition.fiber >= 4) r.matchRate += 0.08;
+          else if (r.nutrition.fiber >= 2) r.matchRate += 0.04;
+        });
+      }
+      // 手动约束：优先含某食材
+      if (cs.preferIngredient.length > 0) {
+        matched.forEach(r => {
+          const ings = r.ingredients.join('');
+          if (cs.preferIngredient.some(pi => ings.includes(pi))) r.matchRate += 0.06;
+        });
+      }
+      // === 硬过滤：目标+健康 ===
+      matched = applyHardFilters(matched, goal, health);
       matched.sort((a, b) => b.matchRate - a.matchRate);
-      return matched;  // 返回全部，由翻页控制显示
+      return matched;
     }
 
     // ===== 菜品类型由 recipe.type 字段直接提供，无需推断 =====
 
     // ===== 纯资料推荐（无食材时按用户画像推荐） =====
     function recommendByProfile(goal, taste, dishType, health) {
+      const cs = getConstraints();
       // 统计用户已设置的条件数
-      const hasGoal = goal && goal !== '均衡饮食';
-      const hasTaste = taste && taste !== '不限制';
-      const hasType = dishType && dishType !== '不限制';
-      const hasHealth = health && health !== '正常';
-      const anyFilter = hasGoal || hasTaste || hasType || hasHealth;
+      const hasGoal = goal && goal.length > 0 && !(goal.length === 1 && goal[0] === '均衡饮食');
+      const hasTaste = taste && taste.length > 0 && !(taste.length === 1 && taste[0] === '不限制');
+      const hasType = dishType && dishType.length > 0 && !(dishType.length === 1 && dishType[0] === '不限制');
+      const hasHealth = health && health.length > 0 && !(health.length === 1 && health[0] === '正常');
+      const anyFilter = hasGoal || hasTaste || hasType || hasHealth || cs.detectedRules.length > 0;
 
-      let scored = recipes.map(r => {
+      // 硬排除过敏/禁忌
+      let candidatePool = recipes;
+      if (cs.excludeKeywords.length > 0) {
+        const before = candidatePool.length;
+        candidatePool = candidatePool.filter(r => {
+          const allIngText = r.ingredients.join('');
+          return !cs.excludeKeywords.some(kw => allIngText.includes(kw));
+        });
+        if (before !== candidatePool.length) {
+          window._manualRules = window._manualRules || [];
+          window._manualRules.push(`🔍 语义硬排除：${before - candidatePool.length}道菜被剔除（禁忌食材）`);
+        }
+      }
+      if (cs.excludeTastes.length > 0) {
+        const before = candidatePool.length;
+        candidatePool = candidatePool.filter(r => !cs.excludeTastes.includes(r.taste));
+        if (before !== candidatePool.length) {
+          window._manualRules = window._manualRules || [];
+          window._manualRules.push(`🔍 语义硬排除：${before - candidatePool.length}道菜被剔除（禁忌口味：${cs.excludeTastes.join('、')}）`);
+        }
+      }
+      if (cs.excludeTypes.length > 0) {
+        const before = candidatePool.length;
+        candidatePool = candidatePool.filter(r => !cs.excludeTypes.includes(r.type));
+        if (before !== candidatePool.length) {
+          window._manualRules = window._manualRules || [];
+          window._manualRules.push(`🔍 语义硬排除：${before - candidatePool.length}道菜被剔除（禁忌类型：${cs.excludeTypes.join('、')}）`);
+        }
+      }
+      if (cs.excludeAlcohol) {
+        const before = candidatePool.length;
+        const alcoholKw = ['啤酒','料酒','黄酒','酒酿','米酒'];
+        candidatePool = candidatePool.filter(r => !alcoholKw.some(k => r.ingredients.join('').includes(k)));
+        if (before !== candidatePool.length) {
+          window._manualRules = window._manualRules || [];
+          window._manualRules.push(`🔍 语义硬排除：${before - candidatePool.length}道含酒精菜被剔除`);
+        }
+      }
+
+      let scored = candidatePool.map(r => {
         let score = 0.4; // 基础分
         const dt = r.type || '其他';
 
         if (hasType) {
-          // 类型已在下方硬过滤，不在此处加权
+          if (dishType.includes(dt)) score += 0.20;
         }
+        // 手动约束：优先类型
+        cs.preferType.forEach(pt => { if (r.type === pt) score += 0.06; });
         if (hasTaste) {
-          if (r.taste === taste) score += 0.25;
-          else if (taste === '清淡' && r.taste !== '麻辣' && r.taste !== '重口味') score += 0.08;
-          else if (taste === '麻辣' && (r.taste === '微辣' || r.taste === '麻辣')) score += 0.10;
+          if (taste.includes(r.taste)) score += 0.25;
+          else if (taste.includes('清淡') && r.taste !== '麻辣' && r.taste !== '重口味') score += 0.08;
+          else if (taste.some(t => t === '麻辣') && (r.taste === '微辣' || r.taste === '麻辣')) score += 0.10;
         }
+        // 手动约束：优先口味
+        cs.preferTaste.forEach(pt => { if (r.taste === pt) score += 0.06; });
         
         if (hasGoal) {
-          if (goal === '减脂') {
+          if (goal.includes('减脂')) {
             if (r.nutrition.calories < 200) score += 0.20;
             else if (r.nutrition.calories < 350) score += 0.10;
             if (dt === '素菜' || dt === '轻食沙拉' || dt === '海鲜') score += 0.12;
             if (r.taste === '清淡') score += 0.10;
-          } else if (goal === '增肌' || goal === '高蛋白') {
+          }
+          if (goal.includes('增肌') || goal.includes('高蛋白')) {
             if (r.nutrition.protein >= 25) score += 0.20;
             else if (r.nutrition.protein >= 18) score += 0.10;
             if (dt === '肉菜' || dt === '海鲜' || dt === '蛋类') score += 0.12;
-          } else if (goal === '控糖') {
+          }
+          if (goal.includes('控糖')) {
             if (r.nutrition.carbs < 10) score += 0.20;
             else if (r.nutrition.carbs < 20) score += 0.10;
             if (dt === '素菜' || dt === '海鲜' || dt === '蛋类') score += 0.10;
-          } else if (goal === '低钠') {
+          }
+          if (goal.includes('低钠')) {
             if (r.taste === '清淡') score += 0.25;
             if (dt !== '小吃') score += 0.05;
-          } else if (goal === '高纤维') {
+          }
+          if (goal.includes('高纤维')) {
             if (r.nutrition.fiber >= 4) score += 0.20;
             else if (r.nutrition.fiber >= 2) score += 0.10;
             if (dt === '素菜') score += 0.10;
           }
         }
 
+        // 手动健康目标加权
+        if (cs.preferLowFat) {
+          if (r.nutrition.fat < 14) score += 0.08;
+          if (r.nutrition.fat > 28) score -= 0.05;
+        }
+        if (cs.preferHighProtein) {
+          if (r.nutrition.protein >= 25) score += 0.08;
+          else if (r.nutrition.protein >= 18) score += 0.04;
+        }
+        if (cs.preferLowCarb) {
+          if (r.nutrition.carbs < 12) score += 0.08;
+          else if (r.nutrition.carbs < 20) score += 0.04;
+        }
+        if (cs.preferLowSodium || cs.preferLight) {
+          if (r.taste === '清淡') score += 0.08;
+        }
+        if (cs.preferHighFiber) {
+          if (r.nutrition.fiber >= 4) score += 0.08;
+          else if (r.nutrition.fiber >= 2) score += 0.04;
+        }
+        if (cs.preferIngredient.length > 0) {
+          const ings = r.ingredients.join('');
+          if (cs.preferIngredient.some(pi => ings.includes(pi))) score += 0.06;
+        }
+
         if (hasHealth) {
-          if (health === '高血压') {
+          if (health.includes('高血压')) {
             if (r.taste === '清淡') score += 0.15;
             if (dt !== '小吃' && dt !== '砂锅煲') score += 0.05;
           }
-          if (health === '糖尿病') {
+          if (health.includes('糖尿病')) {
             if (r.nutrition.carbs < 15) score += 0.15;
           }
-          if (health === '高血脂') {
+          if (health.includes('高血脂')) {
             if (r.taste === '清淡' && r.nutrition.fat < 15) score += 0.15;
           }
-          if (health === '痛风') {
+          if (health.includes('痛风')) {
             if (dt === '素菜' || dt === '蛋类' || dt === '豆制品' || dt === '主食') score += 0.20;
             if (dt === '海鲜') score -= 0.4;
             const risky = ['牛肉','猪肉','羊肉','内脏','虾','蟹','蛤','扇贝','三文鱼','带鱼','鱿鱼'];
             if (risky.some(k => r.ingredients.join('').includes(k))) score -= 0.25;
           }
-          if (health === '花生过敏') {
+          if (health.includes('花生过敏')) {
             if (r.ingredients.join('').includes('花生')) score -= 0.5;
           }
-          if (health === '海鲜过敏') {
+          if (health.includes('海鲜过敏')) {
             const seafood = ['虾','蟹','蛤','扇贝','鱿鱼','三文鱼','带鱼','鲈鱼','草鱼','鲤鱼','海参','蛏子'];
             if (seafood.some(k => r.ingredients.join('').includes(k))) score -= 0.5;
           }
-          if (health === '乳糖不耐受') {
+          if (health.includes('乳糖不耐受')) {
             if (r.ingredients.join('').includes('牛奶') || r.ingredients.join('').includes('奶油') || r.ingredients.join('').includes('奶酪') || r.ingredients.join('').includes('芝士')) score -= 0.4;
+          }
+          if (health.includes('麸质过敏')) {
+            if (r.ingredients.join('').includes('面粉') || r.ingredients.join('').includes('面包') || r.ingredients.join('').includes('面条') || r.ingredients.join('').includes('意大利面')) score -= 0.4;
           }
         }
 
@@ -996,10 +1276,14 @@
 
       // 菜品类型硬过滤
       if (hasType) {
-        scored = scored.filter(r => r.type === dishType);
+        scored = scored.filter(r => dishType.includes(r.type));
       }
       if (scored.length === 0) {
-        // 兜底：如果所选类型无结果，返回空
+        return [];
+      }
+      // === 硬过滤：目标+健康 ===
+      scored = applyHardFilters(scored, goal, health);
+      if (scored.length === 0) {
         return [];
       }
       scored.sort((a, b) => b.matchRate - a.matchRate);
@@ -1017,13 +1301,20 @@
     function analyzeNutrition(total, goal) {
       let warnings = [];
       let suggestions = [];
+      const cs = getConstraints();
       const proteinGap = dailyGoals.protein - total.protein;
       const fiberGap = dailyGoals.fiber - total.fiber;
       const vitaminCGap = dailyGoals.vitaminC - total.vitaminC;
 
+      const getSafeSuggest = (defaultFoods) => {
+        if (cs.excludeKeywords.length === 0) return defaultFoods;
+        return defaultFoods.filter(f => !cs.excludeKeywords.some(kw => f.includes(kw)));
+      };
+
       if (proteinGap > 10) {
         warnings.push(`蛋白质摄入不足，缺口约 ${Math.round(proteinGap)}g`);
-        suggestions.push(`建议增加：鸡蛋、鸡胸肉、豆腐、虾仁`);
+        const safe = getSafeSuggest(['鸡蛋','鸡胸肉','豆腐','虾仁']);
+        if (safe.length > 0) suggestions.push(`建议增加：${safe.join('、')}`);
       }
       if (fiberGap > 5) {
         warnings.push(`膳食纤维不足，缺口约 ${Math.round(fiberGap)}g`);
@@ -1033,18 +1324,20 @@
         warnings.push(`维生素C不足，缺口约 ${Math.round(vitaminCGap)}mg`);
         suggestions.push(`建议增加：番茄、青椒、青菜`);
       }
-      if (goal === '减脂' && total.calories > 500) {
+      if (goal && goal.includes('减脂') && total.calories > 500) {
         warnings.push('当前菜谱热量偏高，减脂建议单餐控制在500大卡以内');
       }
-      if (goal === '增肌' && total.protein < 50) {
+      if (goal && goal.includes('增肌') && total.protein < 50) {
         warnings.push('增肌需要更多蛋白质，目前蛋白质摄入偏低');
-        suggestions.push(`建议增加：牛肉、鸡胸肉、鸡蛋`);
+        const safe = getSafeSuggest(['牛肉','鸡胸肉','鸡蛋']);
+        if (safe.length > 0) suggestions.push(`建议增加：${safe.join('、')}`);
       }
-      if (goal === '高蛋白' && total.protein < 50) {
+      if (goal && goal.includes('高蛋白') && total.protein < 50) {
         warnings.push('高蛋白目标下蛋白质摄入未达标');
-        suggestions.push(`建议增加：牛肉、虾仁、鸡胸肉、鸡蛋`);
+        const safe = getSafeSuggest(['牛肉','虾仁','鸡胸肉','鸡蛋']);
+        if (safe.length > 0) suggestions.push(`建议增加：${safe.join('、')}`);
       }
-      if (goal === '低钠') {
+      if (goal && goal.includes('低钠')) {
         warnings.push('低钠饮食请减少酱油和盐的使用量');
       }
       return { warnings, suggestions };
@@ -1052,26 +1345,53 @@
 
     // ===== AI建议 =====
     function generateAIAdvice(selectedRecipes, total, goal, health, taste, healthManual, goalManual, tasteManual, typeManual) {
+      const cs = getConstraints();
       let messages = [];
       if (userIngredients.length > 0) {
         messages.push(`<span class="ai-name">AI 饮食顾问：</span> 根据您的食材，我为您筛选了 ${selectedRecipes.length} 道菜谱。`);
       } else {
-        messages.push(`<span class="ai-name">AI 饮食顾问：</span> 您未添加食材，我根据您的${goal || '饮食'}目标${health && health !== '正常' ? '和健康状态' : ''}为您推荐了 ${selectedRecipes.length} 道菜谱，添加食材后匹配更精准。`);
+        const hasHealthCond = health && health.length > 0 && !(health.length === 1 && health[0] === '正常');
+        const goalLabel = (goal && goal.length > 0 && !(goal.length === 1 && goal[0] === '均衡饮食')) ? goal.join('、') : '饮食';
+        messages.push(`<span class="ai-name">AI 饮食顾问：</span> 您未添加食材，我根据您的${goalLabel}目标${hasHealthCond ? '和健康状态' : ''}为您推荐了 ${selectedRecipes.length} 道菜谱，添加食材后匹配更精准。`);
       }
 
-      if (goal === '减脂') {
+      // 显示从手动输入中解析出的约束
+      if (cs.detectedRules.length > 0) {
+        cs.detectedRules.forEach(rule => {
+          messages.push(`<span class="ai-name">🤖 语义解析：</span> ${rule}`);
+        });
+      }
+      // 显示硬过滤规则及其效果
+      if (window._filterRules && window._filterRules.length > 0) {
+        window._filterRules.forEach(rule => {
+          messages.push(`<span class="ai-name">🔬 硬过滤：</span> ${rule}`);
+        });
+      }
+      if (window._manualRules && window._manualRules.length > 0) {
+        window._manualRules.forEach(rule => {
+          messages.push(`<span class="ai-name">📋 语义统计：</span> ${rule}`);
+        });
+      }
+
+      if (goal && goal.includes('减脂')) {
         messages.push(`<span class="ai-name">AI 营养分析师：</span> 减脂期间建议选择清蒸虾仁、虾仁青菜等低热量低脂菜品，总热量控制在合理范围内。`);
-      } else if (goal === '增肌') {
+      }
+      if (goal && goal.includes('增肌')) {
         messages.push(`<span class="ai-name">AI 营养分析师：</span> 增肌需要充足的蛋白质，推荐牛肉和鸡胸肉为主的菜谱，建议搭配加餐。`);
-      } else if (goal === '控糖') {
+      }
+      if (goal && goal.includes('控糖')) {
         messages.push(`<span class="ai-name">AI 营养分析师：</span> 控糖需要关注碳水来源，优先选择蔬菜和低GI食材，避免精制主食。`);
-      } else if (goal === '高蛋白') {
+      }
+      if (goal && goal.includes('高蛋白')) {
         messages.push(`<span class="ai-name">AI 营养分析师：</span> 高蛋白方案已启动，牛肉、虾仁、鸡蛋、豆腐都是优质来源。`);
-      } else if (goal === '低钠') {
+      }
+      if (goal && goal.includes('低钠')) {
         messages.push(`<span class="ai-name">AI 营养分析师：</span> 低钠饮食以清淡为主，调味可用香料代替盐和酱油。`);
-      } else if (goal === '高纤维') {
+      }
+      if (goal && goal.includes('高纤维')) {
         messages.push(`<span class="ai-name">AI 营养分析师：</span> 推荐多选蔬菜类菜谱，膳食纤维助消化、稳血糖。`);
-      } else {
+      }
+      if (!goal || goal.length === 0 || (goal.length === 1 && goal[0] === '均衡饮食')) {
         messages.push(`<span class="ai-name">AI 营养分析师：</span> 均衡饮食建议荤素搭配，今天的菜谱覆盖了多种食材，营养比较全面。`);
       }
 
@@ -1090,7 +1410,7 @@
       if (health.includes('孕期') || health.includes('哺乳期')) {
         messages.push(`<span class="ai-name">AI 饮食顾问：</span> ${health}期间需要加强营养，补充叶酸、铁、钙，保证优质蛋白和新鲜蔬菜。`);
       }
-      if (health.includes('过敏') || health.includes('不耐受')) {
+      if (health.some(h => h.includes('过敏') || h.includes('不耐受'))) {
         messages.push(`<span class="ai-name">AI 饮食顾问：</span> 已考虑您的过敏/不耐受情况，推荐菜谱会自动避开相关食材。`);
       }
 
@@ -1115,9 +1435,9 @@
         }
       }
 
-      if (taste === '麻辣' || taste === '重口味') {
-        messages.push(`<span class="ai-name">AI 烹饪指导：</span> ${taste}风味，火候要到位，辣椒花椒爆出香味再下主料，注意别烧焦。`);
-      } else if (taste === '酸甜') {
+      if (taste && (taste.includes('麻辣') || taste.includes('重口味'))) {
+        messages.push(`<span class="ai-name">AI 烹饪指导：</span> ${taste.join('、')}风味，火候要到位，辣椒花椒爆出香味再下主料，注意别烧焦。`);
+      } else if (taste && taste.includes('酸甜')) {
         messages.push(`<span class="ai-name">AI 烹饪指导：</span> 酸甜口味关键在于糖醋比例，建议2:1左右，先酸后甜层次分明。`);
       } else {
         messages.push(`<span class="ai-name">AI 烹饪指导：</span> 今天的菜谱难度以${selectedRecipes[0]?.difficulty || '简单'}为主，祝您烹饪愉快！`);
@@ -1126,23 +1446,598 @@
       return messages;
     }
 
-    function getSelectedTag(groupId) {
-      const active = document.querySelector(`#${groupId} .select-option.active`);
-      return active ? active.dataset.value : '';
+    function getSelectedTags(groupId) {
+      const actives = document.querySelectorAll(`#${groupId} .select-option.active`);
+      return Array.from(actives).map(el => el.dataset.value);
     }
 
     function getManualInput(inputId) {
       return document.getElementById(inputId).value.trim();
     }
 
+    // ===== 语义解析引擎：从手动输入中提取约束 =====
+    function parseManualInputs(healthManual, goalManual, tasteManual, typeManual) {
+      const allText = [healthManual, goalManual, tasteManual, typeManual].filter(Boolean).join('；');
+      const result = {
+        excludeKeywords: [],      // 排除含这些词的食谱名/食材
+        excludeTastes: [],        // 硬排除这些口味
+        excludeTypes: [],         // 硬排除这些菜品类型
+        excludeAlcohol: false,    // 排除含酒精的菜
+        preferIngredient: [],    // 优先含这些食材
+        preferTaste: [],         // 优先这些口味
+        preferType: [],          // 优先这些类型
+        preferLight: false,      // 偏好清淡
+        preferLowFat: false,     // 偏好低脂
+        preferLowCarb: false,    // 偏好低碳水
+        preferHighProtein: false,// 偏好高蛋白
+        preferHighFiber: false,  // 偏好高纤维
+        preferLowSodium: false,  // 偏好低钠
+        detectedRules: []        // 人类可读的规则说明
+      };
+
+      // 关键词→食谱食材映射
+      const allergenMap = {
+        '鸡': ['鸡','鸡胸肉','鸡腿','鸡翅','鸡块','鸡柳','鸡爪','鸡蛋','蛋液','鸭蛋','皮蛋','咸鸭蛋','蛋'],
+        '鸡肉': ['鸡','鸡胸肉','鸡腿','鸡翅','鸡块','鸡柳','鸡爪'],
+        '鸡蛋': ['鸡蛋','蛋液','鸭蛋','皮蛋','咸鸭蛋','蛋'],
+        '蛋': ['鸡蛋','蛋液','鸭蛋','皮蛋','咸鸭蛋','蛋'],
+        '猪肉': ['猪肉','五花肉','肉末','排骨','培根','火腿','腊肠','午餐肉','大肠'],
+        '牛肉': ['牛肉','牛腩','肥牛','牛柳','牛排'],
+        '羊肉': ['羊肉','羊排','羊腿'],
+        '鸭': ['鸭','鸭肉','鸭腿','鸭翅','鸭血'],
+        '牛奶': ['牛奶','奶酪','芝士','黄油','奶油','酸奶','椰奶'],
+        '乳': ['牛奶','奶酪','芝士','黄油','奶油','酸奶'],
+        '奶': ['牛奶','奶酪','芝士','黄油','奶油','酸奶','椰奶','奶茶'],
+        '花生': ['花生','花生米','花生碎'],
+        '海鲜': ['虾','虾仁','虾皮','蟹','蛤','蛤蜊','扇贝','三文鱼','鲈鱼','草鱼','鲤鱼','带鱼','鱿鱼','蛏子','海参','金枪鱼','鱼头','鱼','螃蟹','大闸蟹'],
+        '鱼': ['鱼','鱼头','鲈鱼','草鱼','鲤鱼','带鱼','三文鱼','金枪鱼','黄鱼','石斑鱼','鱼块'],
+        '虾': ['虾','虾仁','虾皮'],
+        '蟹': ['蟹','螃蟹','大闸蟹'],
+        '面粉': ['面粉','面条','意大利面','吐司','面包','面包丁','乌冬面','河粉','米粉','红薯粉','粉丝','粉条'],
+        '麸质': ['面粉','面条','意大利面','吐司','面包','面包丁'],
+        '香菜': ['香菜'],
+        '蒜': ['蒜','大蒜','蒜末','蒜泥'],
+        '姜': ['姜','生姜'],
+        '豆腐': ['豆腐','嫩豆腐','老豆腐'],
+        '蘑菇': ['蘑菇','香菇','杏鲍菇','金针菇','菌菇'],
+        '辣椒': ['干辣椒','辣椒油','辣椒粉','泡椒','剁椒','辣椒'],
+        '辣': ['干辣椒','辣椒油','辣椒粉','泡椒','剁椒'],
+        '坚果': ['花生','腰果','核桃','芝麻','松仁'],
+        '酒精': ['啤酒','料酒','黄酒','酒酿'],
+        '酒': ['啤酒','料酒','黄酒','酒酿'],
+        '内脏': ['大肠','鸭血'],
+        '味精': [],
+        '糖': ['冰糖','红糖','白糖','蜂蜜'],
+        '盐': [],
+      };
+
+      // 解析：X过敏 → 排除X
+      const allergyRe = /([\u4e00-\u9fa5]+?)(?:过敏)/g;
+      let m;
+      while ((m = allergyRe.exec(allText)) !== null) {
+        const word = m[1];
+        const mapped = allergenMap[word] || allergenMap[word.replace(/肉$/, '')];
+        if (mapped && mapped.length > 0) {
+          result.excludeKeywords.push(...mapped);
+          result.detectedRules.push(`🚫 已识别：${word}过敏 → 排除 ${mapped.slice(0,4).join('、')}${mapped.length>4?'等':''}`);
+        } else {
+          result.excludeKeywords.push(word);
+          result.detectedRules.push(`🚫 已识别：${word}过敏 → 排除含"${word}"的菜谱`);
+        }
+      }
+
+      // 解析：不耐受X → 排除
+      const intolRe = /(?:不耐受|不能耐受)([\u4e00-\u9fa5]+)/g;
+      while ((m = intolRe.exec(allText)) !== null) {
+        const word = m[1];
+        const mapped = allergenMap[word];
+        if (mapped) {
+          result.excludeKeywords.push(...mapped);
+          result.detectedRules.push(`🚫 已识别：${word}不耐受 → 排除相关食材`);
+        }
+      }
+
+      // 解析：不吃X / 忌X / 不能吃X / 讨厌X
+      const dislikeRe = /(?:不吃|忌|不能吃|讨厌|不喜欢|别吃|避开|不要|避开)([\u4e00-\u9fa5]+)/g;
+      while ((m = dislikeRe.exec(allText)) !== null) {
+        const word = m[1].replace(/的|了|和|与|或/g, '');
+        if (word.length > 0) {
+          const mapped = allergenMap[word];
+          if (mapped) {
+            result.excludeKeywords.push(...mapped);
+            result.detectedRules.push(`🚫 已识别：不吃${word} → 排除相关食材`);
+          } else {
+            result.excludeKeywords.push(word);
+            result.detectedRules.push(`🚫 已识别：不吃${word} → 排除含"${word}"的菜谱`);
+          }
+        }
+      }
+
+      // 解析：喜欢X / 爱吃X / 想吃X
+      const likeRe = /(?:喜欢|爱吃|想吃|多吃|偏爱|偏好)([\u4e00-\u9fa5]+)/g;
+      while ((m = likeRe.exec(allText)) !== null) {
+        const word = m[1].replace(/的|了/g, '');
+        const tasteMap = { '辣':'麻辣', '麻':'麻辣', '甜':'甜口', '酸':'酸甜', '咸':'咸鲜', '清淡':'清淡' };
+        const typeMap = { '肉':'肉菜', '素':'素菜', '海鲜':'海鲜', '汤':'汤', '面':'主食', '饭':'主食', '主食':'主食', '凉菜':'凉菜' };
+        if (tasteMap[word]) { result.preferTaste.push(tasteMap[word]); result.detectedRules.push(`✅ 偏好${word}口味`); }
+        else if (typeMap[word]) { result.preferType.push(typeMap[word]); result.detectedRules.push(`✅ 偏好${word}类`); }
+        else {
+          result.preferIngredient.push(word);
+          result.detectedRules.push(`✅ 偏好食材：${word}`);
+        }
+      }
+
+      // ===== 疾病知识库：症状→饮食禁忌 =====
+      const diseaseDB = {
+        '肠胃炎': {
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeTypes: ['凉菜','小吃','饮料甜品'],
+          excludeKeywords: ['辣椒','花椒','干辣椒','辣椒油','辣椒粉','醋','酒','啤酒','料酒','黄酒','胡椒'],
+          preferLight: true, preferLowFat: true,
+          desc: '肠胃炎需清淡易消化，忌辛辣油腻生冷'
+        },
+        '胃炎': {
+          excludeTastes: ['麻辣','重口味','微辣','酸甜'],
+          excludeKeywords: ['辣椒','花椒','干辣椒','辣椒油','醋','酒','啤酒'],
+          preferLight: true, preferLowFat: true,
+          desc: '胃炎忌辛辣刺激、过酸、酒精'
+        },
+        '腹泻': {
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeTypes: ['凉菜','饮料甜品'],
+          excludeKeywords: ['牛奶','奶酪','芝士','黄油','奶油','辣椒','花椒','酒','醋'],
+          preferLight: true, preferLowFat: true,
+          desc: '腹泻忌生冷油腻乳制品辛辣'
+        },
+        '便秘': {
+          preferHighFiber: true,
+          excludeTastes: ['麻辣','重口味'],
+          desc: '便秘需高纤维多蔬果多饮水'
+        },
+        '感冒': {
+          preferType: ['汤'],
+          excludeTastes: ['麻辣','重口味'],
+          excludeTypes: ['凉菜'],
+          preferLight: true,
+          desc: '感冒宜温热汤食，忌生冷辛辣'
+        },
+        '发烧': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeTypes: ['凉菜','小吃'],
+          preferLight: true, preferLowFat: true, preferType: ['汤'],
+          desc: '发烧需清淡流质，忌油腻辛辣'
+        },
+        '咳嗽': {
+          excludeTastes: ['麻辣','重口味','甜口'],
+          excludeTypes: ['凉菜','饮料甜品'],
+          excludeKeywords: ['辣椒','花椒','冰糖','红糖','蜂蜜','醋'],
+          preferLight: true,
+          desc: '咳嗽忌辛辣甜腻生冷'
+        },
+        '口腔溃疡': {
+          excludeTastes: ['麻辣','重口味','微辣','酸甜'],
+          excludeKeywords: ['辣椒','花椒','干辣椒','辣椒油','醋','胡椒'],
+          desc: '口腔溃疡忌辛辣刺激酸烫'
+        },
+        '贫血': {
+          preferType: ['肉菜','蛋类'],
+          preferIngredient: ['牛肉','猪肉','鸡蛋','青菜','木耳'],
+          desc: '贫血需补铁：红肉、动物血、深色蔬菜'
+        },
+        '痛风': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeTypes: ['海鲜'],
+          excludeKeywords: ['牛肉','猪肉','羊肉','虾','蟹','蛤','蛤蜊','扇贝','三文鱼','带鱼','鱿鱼','蛏子','海参','啤酒','酒酿','大肠','鸭血'],
+          preferLight: true,
+          desc: '痛风忌高嘌呤：海鲜、红肉、内脏、酒精'
+        },
+        '肾病': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['酱油','盐','豆瓣酱','蚝油','榨菜','咸鸭蛋','腊肠','火腿','培根'],
+          preferLowSodium: true,
+          desc: '肾病需严格控制盐和蛋白质摄入'
+        },
+        '肝病': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['酒','啤酒','料酒','黄酒'],
+          excludeAlcohol: true,
+          preferLowFat: true, preferLight: true,
+          desc: '肝病忌酒精、油腻，需清淡高蛋白'
+        },
+        '胰腺炎': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['酒','啤酒','料酒','五花肉','肥牛','黄油','奶油','芝士'],
+          preferLowFat: true, preferLight: true,
+          desc: '胰腺炎严格忌油腻、酒精'
+        },
+        '胆囊炎': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['五花肉','肥牛','黄油','奶油','芝士','油炸'],
+          preferLowFat: true, preferLight: true,
+          desc: '胆囊炎忌高脂肪、油炸食物'
+        },
+        '湿疹': {
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeTypes: ['海鲜'],
+          excludeKeywords: ['虾','蟹','蛤','扇贝','鱿鱼','三文鱼','带鱼','辣椒','花椒','酒'],
+          desc: '湿疹忌海鲜、辛辣、酒精'
+        },
+        '痤疮': {
+          excludeTastes: ['麻辣','重口味','甜口'],
+          excludeKeywords: ['辣椒','花椒','巧克力','糖','冰糖','蜂蜜','黄油','奶油'],
+          desc: '痤疮忌辛辣油腻高糖'
+        },
+        '高血压': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['酱油','盐','豆瓣酱','蚝油','榨菜','咸鸭蛋','腊肠','火腿','培根'],
+          preferLowSodium: true, preferLight: true,
+          desc: '高血压需低钠低脂饮食'
+        },
+        '糖尿病': {
+          excludeTastes: ['甜口'],
+          excludeTypes: ['饮料甜品'],
+          excludeKeywords: ['糖','冰糖','蜂蜜','红糖','白糖','可乐','糯米'],
+          preferLowCarb: true,
+          desc: '糖尿病需控制碳水总量，忌甜食'
+        },
+        '高血脂': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['五花肉','黄油','奶油','芝士','肥牛','培根','猪油'],
+          preferLowFat: true, preferLight: true,
+          desc: '高血脂忌高脂高胆固醇'
+        },
+        '甲状腺': {
+          excludeKeywords: ['海带','紫菜','海参','虾皮'],
+          desc: '甲状腺疾病需遵医嘱控制碘摄入'
+        },
+        '骨质疏松': {
+          preferType: ['蛋类','海鲜','豆制品'],
+          preferIngredient: ['牛奶','豆腐','奶酪','虾','虾皮','芝士'],
+          desc: '骨质疏松需补钙和维生素D'
+        },
+        '胃食管反流': {
+          excludeTastes: ['麻辣','重口味','微辣','酸甜'],
+          excludeKeywords: ['辣椒','花椒','醋','巧克力','咖啡','酒','薄荷'],
+          excludeTypes: ['饮料甜品'],
+          preferLight: true, preferLowFat: true,
+          desc: '胃食管反流忌辛辣酸腻，少食多餐'
+        },
+        '消化不良': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['辣椒','花椒','五花肉','肥牛','黄油','奶油','酒'],
+          preferLight: true, preferLowFat: true,
+          desc: '消化不良忌油腻辛辣难消化食物'
+        },
+        '肠易激': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['牛奶','奶酪','芝士','黄油','辣椒','花椒','咖啡','酒'],
+          excludeTypes: ['饮料甜品'],
+          preferLight: true, preferLowFat: true,
+          desc: '肠易激综合征需低FODMAP饮食'
+        },
+        '月经': {
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeTypes: ['凉菜','饮料甜品','小吃'],
+          excludeKeywords: ['辣椒','花椒','醋','酒','咖啡','啤酒','冰','奶油'],
+          preferLight: true,
+          desc: '经期忌生冷辛辣，宜温热补铁'
+        },
+        '痛经': {
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeTypes: ['凉菜','饮料甜品'],
+          excludeKeywords: ['辣椒','花椒','醋','酒','咖啡'],
+          preferLight: true,
+          desc: '痛经忌生冷寒凉辛辣刺激'
+        },
+        '经期': {
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeTypes: ['凉菜','饮料甜品'],
+          excludeKeywords: ['辣椒','花椒','醋','酒','咖啡'],
+          preferLight: true,
+          desc: '经期忌生冷辛辣，宜温热饮食'
+        },
+        '备孕': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['酒','啤酒','料酒','咖啡','生'],
+          excludeAlcohol: true,
+          preferLight: true,
+          desc: '备孕需补充叶酸，忌酒精咖啡烟'
+        },
+        '更年期': {
+          preferType: ['豆制品','蛋类','海鲜'],
+          preferIngredient: ['豆腐','牛奶','虾','鸡蛋'],
+          preferLight: true,
+          desc: '更年期需补钙、植物雌激素，清淡饮食'
+        },
+        '抑郁症': {
+          preferIngredient: ['三文鱼','牛油果','香蕉','核桃','燕麦'],
+          preferType: ['海鲜','轻食沙拉'],
+          desc: '抑郁症宜补充Omega-3、B族维生素'
+        },
+        '失眠': {
+          excludeKeywords: ['咖啡','茶叶','巧克力','酒'],
+          preferIngredient: ['牛奶','香蕉','燕麦','蜂蜜'],
+          excludeTypes: ['饮料甜品'],
+          desc: '失眠忌咖啡因酒精，宜安神食材'
+        },
+        '偏头痛': {
+          excludeKeywords: ['酒','啤酒','咖啡','巧克力','芝士','奶酪','火腿','腊肠'],
+          excludeAlcohol: true,
+          desc: '偏头痛忌酪胺食物、酒精、咖啡因'
+        },
+        '上火': {
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeKeywords: ['辣椒','花椒','姜','蒜','羊肉','酒','油炸','巧克力'],
+          excludeTypes: ['小吃'],
+          preferLight: true,
+          desc: '上火忌辛辣燥热，宜清热降火'
+        },
+        '口腔溃疡': {
+          excludeTastes: ['麻辣','重口味','微辣','酸甜'],
+          excludeKeywords: ['辣椒','花椒','干辣椒','辣椒油','醋','胡椒'],
+          desc: '口腔溃疡忌辛辣刺激酸烫'
+        },
+        '关节炎': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['啤酒','酒','牛肉','猪肉','羊肉','虾','蟹'],
+          excludeTypes: ['海鲜'],
+          preferLight: true,
+          desc: '关节炎忌高嘌呤、酒精，宜抗炎饮食'
+        },
+        '痔疮': {
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeKeywords: ['辣椒','花椒','酒','啤酒','姜','蒜'],
+          preferHighFiber: true, preferLight: true,
+          desc: '痔疮忌辛辣刺激，需高纤维饮食'
+        },
+        '脱发': {
+          preferType: ['蛋类','海鲜','豆制品'],
+          preferIngredient: ['鸡蛋','三文鱼','核桃','芝麻','牛肉','菠菜'],
+          preferHighProtein: true,
+          desc: '脱发需补充蛋白质、铁、锌、B族'
+        },
+        '荨麻疹': {
+          excludeTypes: ['海鲜'],
+          excludeKeywords: ['虾','蟹','蛤','扇贝','三文鱼','鸡蛋','牛奶','花生','酒'],
+          excludeTastes: ['麻辣','重口味'],
+          desc: '荨麻疹忌海鲜蛋奶花生等常见过敏原'
+        },
+        '肾结石': {
+          excludeKeywords: ['菠菜','竹笋','豆腐','豆皮','巧克力','茶叶','花生'],
+          preferLowSodium: true,
+          desc: '肾结石（草酸钙型）忌高草酸食物'
+        },
+        '膀胱炎': {
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeKeywords: ['辣椒','酒','啤酒','咖啡'],
+          preferLight: true,
+          desc: '膀胱炎忌辛辣酒精咖啡因'
+        },
+        '冠心病': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['五花肉','肥牛','黄油','奶油','芝士','猪油','盐'],
+          preferLowFat: true, preferLowSodium: true, preferLight: true,
+          desc: '冠心病忌高脂高胆固醇高盐'
+        },
+        '中风': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['盐','酱油','咸鸭蛋','腊肠','火腿','培根','五花肉'],
+          preferLowFat: true, preferLowSodium: true, preferLight: true,
+          desc: '中风后需严格控制盐和脂肪'
+        },
+        '肥胖': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeTypes: ['小吃','饮料甜品'],
+          preferLowFat: true, preferLowCarb: true,
+          desc: '肥胖需控制总热量，忌高脂高糖'
+        },
+        '术后': {
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeKeywords: ['酒','啤酒','辣椒','花椒'],
+          excludeAlcohol: true,
+          preferHighProtein: true, preferLight: true,
+          desc: '术后恢复需高蛋白清淡易消化'
+        },
+        '骨折': {
+          preferType: ['汤','蛋类','海鲜'],
+          preferIngredient: ['牛奶','豆腐','虾','鸡蛋','排骨'],
+          preferHighProtein: true,
+          desc: '骨折需补钙、蛋白质、维生素D'
+        },
+        '鼻炎': {
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeTypes: ['凉菜'],
+          excludeKeywords: ['辣椒','花椒'],
+          preferLight: true,
+          desc: '鼻炎忌辛辣生冷刺激'
+        },
+        '咽炎': {
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeTypes: ['凉菜','小吃'],
+          excludeKeywords: ['辣椒','花椒','酒','醋','胡椒'],
+          preferLight: true,
+          desc: '咽炎忌辛辣刺激，宜润喉清淡'
+        },
+        '甲亢': {
+          excludeKeywords: ['海带','紫菜','海参','虾皮','海鲜'],
+          preferHighProtein: true,
+          desc: '甲亢需高蛋白高热量，忌高碘食物'
+        },
+        '甲减': {
+          preferIngredient: ['海带','紫菜','虾皮'],
+          preferType: ['海鲜'],
+          desc: '甲减需适量补碘和高纤维'
+        },
+        '多囊': {
+          preferLowCarb: true, preferLowFat: true,
+          excludeTypes: ['饮料甜品'],
+          excludeTastes: ['甜口'],
+          desc: '多囊卵巢需低GI饮食控制血糖'
+        },
+        '乳腺增生': {
+          excludeKeywords: ['咖啡','酒','啤酒','蜂蜜','奶油'],
+          excludeTypes: ['饮料甜品'],
+          preferLowFat: true,
+          desc: '乳腺增生忌高脂高糖咖啡因酒精'
+        },
+        '带状疱疹': {
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeKeywords: ['辣椒','花椒','酒','海鲜'],
+          preferLight: true,
+          desc: '带状疱疹忌辛辣海鲜发物'
+        },
+        '水痘': {
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeKeywords: ['辣椒','花椒','酒','海鲜','鸡蛋'],
+          preferLight: true,
+          desc: '水痘忌辛辣发物，宜清淡'
+        },
+        '肝炎': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['酒','啤酒','料酒','五花肉','黄油','奶油'],
+          excludeAlcohol: true,
+          preferLowFat: true, preferLight: true,
+          desc: '肝炎忌酒精油腻，需优质蛋白'
+        },
+        '肝硬化': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['酒','啤酒','料酒','盐','酱油','豆瓣酱'],
+          excludeAlcohol: true,
+          preferLowSodium: true, preferLight: true,
+          desc: '肝硬化忌酒精、严格控盐'
+        },
+        '尿毒症': {
+          excludeKeywords: ['盐','酱油','豆瓣酱','豆腐','豆皮','豆制品','香蕉','土豆','坚果'],
+          preferLowSodium: true,
+          desc: '尿毒症需严格控盐、控钾、控磷、控蛋白'
+        },
+        '肺结核': {
+          preferHighProtein: true,
+          excludeTastes: ['麻辣','重口味','微辣'],
+          excludeKeywords: ['辣椒','花椒','酒'],
+          desc: '肺结核需高蛋白高营养，忌辛辣'
+        },
+        '胃炎急性': {
+          excludeTastes: ['麻辣','重口味','微辣','酸甜'],
+          excludeTypes: ['凉菜','小吃','饮料甜品'],
+          excludeKeywords: ['辣椒','花椒','醋','酒','咖啡'],
+          preferLight: true,
+          desc: '急性胃炎需禁食→流质→半流质过渡'
+        },
+        '痛风急性': {
+          excludeTypes: ['海鲜','肉菜','豆制品','小吃'],
+          excludeKeywords: ['牛肉','猪肉','羊肉','鸡','鸭','鱼','虾','蟹','蛤','扇贝','啤酒','酒','豆','豆腐'],
+          excludeTastes: ['麻辣','重口味'],
+          preferLight: true,
+          desc: '痛风急性期严格忌所有荤食、豆类、酒精'
+        },
+        '过敏体质': {
+          excludeTypes: ['海鲜'],
+          excludeKeywords: ['虾','蟹','蛤','扇贝','三文鱼','花生','腰果','芒果','菠萝','牛奶','鸡蛋'],
+          desc: '过敏体质需避开常见过敏原'
+        },
+        '高血压危象': {
+          excludeTastes: ['麻辣','重口味'],
+          excludeKeywords: ['盐','酱油','豆瓣酱','蚝油','榨菜','咸鸭蛋','腊肠','火腿','培根','猪油'],
+          preferLowSodium: true, preferLight: true, preferLowFat: true,
+          desc: '高血压需严格低钠低脂饮食'
+        },
+        '蛋白质过敏': {
+          excludeKeywords: ['鸡蛋','蛋','牛奶','牛肉','虾','虾仁','三文鱼','鸡胸肉','鸡腿','鸡翅','鸡蛋','蛋液'],
+          desc: '蛋白质过敏需严格回避高蛋白食材'
+        }
+      };
+
+      // 通用健康关键词（无具体疾病名但有症状描述）
+      const generalPatterns = [
+        { re: /减脂|减肥|瘦身|低卡|控制体重/, rule: { preferLowFat:true, preferLight:true }, desc:'识别到减脂意向 → 偏重低脂低卡清淡' },
+        { re: /增肌|增重|力量训练/, rule: { preferHighProtein:true }, desc:'识别到增肌意向 → 偏重高蛋白' },
+        { re: /控糖|糖尿病|血糖/, rule: { preferLowCarb:true }, desc:'识别到控糖意向 → 偏重低碳水' },
+        { re: /高纤维|膳食纤维|通便/, rule: { preferHighFiber:true }, desc:'识别到高纤维意向 → 偏重高纤食材' },
+        { re: /低钠|低盐|少盐|少钠/, rule: { preferLowSodium:true, preferLight:true }, desc:'识别到低钠意向 → 偏重清淡' },
+        { re: /脂肪肝|高血脂|高胆固醇/, rule: { preferLowFat:true, preferLight:true }, desc:'识别到脂肪肝/高血脂 → 偏重低脂清淡' },
+        { re: /清淡|少油|轻食/, rule: { preferLight:true }, desc:'偏好清淡口味' },
+        { re: /高蛋白|蛋白质/, rule: { preferHighProtein:true }, desc:'偏好高蛋白' },
+        { re: /胃酸|反酸|烧心/, rule: { excludeKeywords:['醋','辣椒油','干辣椒','辣椒粉','花椒','泡椒','酒'], preferLight:true, excludeTastes:['麻辣','重口味'] }, desc:'⚠️ 胃酸问题 → 排除酸辣刺激' },
+        { re: /不吃辣|怕辣|忌辣|戒辣|不能吃辣/, rule: { excludeTastes:['麻辣','重口味','微辣'], excludeKeywords:['辣椒','花椒','干辣椒','辣椒粉','辣椒油','剁椒','泡椒'] }, desc:'🚫 忌辣 → 排除所有辣味菜' },
+        { re: /不吃油|怕油|忌油/, rule: { preferLowFat:true, preferLight:true, excludeKeywords:['五花肉','肥牛','黄油','奶油'] }, desc:'忌油腻 → 偏重低脂' },
+        { re: /不吃凉|怕凉|忌凉/, rule: { excludeTypes:['凉菜','饮料甜品'] }, desc:'忌生冷 → 排除凉菜甜品' },
+        { re: /肠胃|肚子|消化/, rule: { preferLight:true, preferLowFat:true, excludeTastes:['麻辣','重口味'] }, desc:'肠胃不适 → 偏重清淡易消化' },
+        { re: /上吐下泻|呕吐|恶心/, rule: { preferLight:true, excludeTastes:['麻辣','重口味','微辣'], excludeTypes:['凉菜','小吃'], excludeKeywords:['牛奶','酒','醋'] }, desc:'呕吐腹泻 → 清淡流质，忌刺激' },
+        { re: /炎症|发炎/, rule: { excludeTastes:['麻辣','重口味','微辣'], preferLight:true }, desc:'炎症期 → 忌辛辣刺激' },
+        { re: /头疼|头痛/, rule: { excludeTypes:['饮料甜品'], excludeKeywords:['酒','啤酒','咖啡','巧克力'] }, desc:'头痛 → 避免酒精咖啡因' },
+      ];
+
+      // 1. 疾病知识库匹配
+      for (const [disease, rules] of Object.entries(diseaseDB)) {
+        if (allText.includes(disease)) {
+          if (rules.excludeTastes) result.excludeTastes.push(...rules.excludeTastes);
+          if (rules.excludeTypes) result.excludeTypes.push(...rules.excludeTypes);
+          if (rules.excludeKeywords) result.excludeKeywords.push(...rules.excludeKeywords);
+          if (rules.excludeAlcohol) result.excludeAlcohol = true;
+          if (rules.preferLight) result.preferLight = true;
+          if (rules.preferLowFat) result.preferLowFat = true;
+          if (rules.preferLowCarb) result.preferLowCarb = true;
+          if (rules.preferHighProtein) result.preferHighProtein = true;
+          if (rules.preferHighFiber) result.preferHighFiber = true;
+          if (rules.preferLowSodium) result.preferLowSodium = true;
+          if (rules.preferType) result.preferType.push(...rules.preferType);
+          if (rules.preferIngredient) result.preferIngredient.push(...rules.preferIngredient);
+          result.detectedRules.push(`🏥 医学知识库：${disease} → ${rules.desc}`);
+        }
+      }
+
+      // 2. 通用症状模式匹配
+      generalPatterns.forEach(p => {
+        if (p.re.test(allText)) {
+          if (p.rule.excludeTastes) result.excludeTastes.push(...p.rule.excludeTastes);
+          if (p.rule.excludeTypes) result.excludeTypes.push(...p.rule.excludeTypes);
+          if (p.rule.excludeKeywords) result.excludeKeywords.push(...p.rule.excludeKeywords);
+          if (p.rule.preferLight) result.preferLight = true;
+          if (p.rule.preferLowFat) result.preferLowFat = true;
+          if (p.rule.preferLowCarb) result.preferLowCarb = true;
+          if (p.rule.preferHighProtein) result.preferHighProtein = true;
+          if (p.rule.preferHighFiber) result.preferHighFiber = true;
+          if (p.rule.preferLowSodium) result.preferLowSodium = true;
+          if (p.rule.excludeAlcohol) result.excludeAlcohol = true;
+          result.detectedRules.push(p.desc);
+        }
+      });
+
+      // 菜品类型关键词
+      if (allText.match(/下饭|下饭菜/)) { result.preferType.push('肉菜'); result.detectedRules.push('偏好下饭菜'); }
+      if (allText.match(/夜宵|夜宵菜/)) { result.preferType.push('小吃'); result.detectedRules.push('偏好夜宵小吃'); }
+      if (allText.match(/减脂餐|轻食/)) { result.preferType.push('轻食沙拉'); result.preferLowFat = true; result.detectedRules.push('偏好轻食沙拉'); }
+
+      // 去重
+      result.excludeKeywords = [...new Set(result.excludeKeywords)];
+      result.excludeTastes = [...new Set(result.excludeTastes)];
+      result.excludeTypes = [...new Set(result.excludeTypes)];
+
+      return result;
+    }
+
+    let _cachedConstraints = null;
+    function getConstraints() {
+      if (_cachedConstraints) return _cachedConstraints;
+      const h = getManualInput('healthManual');
+      const g = getManualInput('goalManual');
+      const t = getManualInput('tasteManual');
+      const y = getManualInput('typeManual');
+      _cachedConstraints = parseManualInputs(h, g, t, y);
+      return _cachedConstraints;
+    }
+
     // ===== AI 智能体分析函数 =====
     function aiAnalyzeHealth() {
-      const selected = getSelectedTag('healthTags');
+      _cachedConstraints = null;
+      const selected = getSelectedTags('healthTags');
       const manual = getManualInput('healthManual');
+      const cs = getConstraints();
       const resultDiv = document.getElementById('healthAIResult');
       let advice = [];
 
-      if (!selected || selected === '正常') {
+      if (!selected || selected.length === 0 || (selected.length === 1 && selected[0] === '正常')) {
         advice.push('✅ 您当前健康状态良好，保持均衡饮食即可。');
       } else {
         const healthAdvice = {
@@ -1157,11 +2052,18 @@
           '乳糖不耐受': '🚫 避免<span class="highlight">牛奶、奶酪等乳制品</span>，可选择乳糖水解奶、酸奶或植物奶替代。',
           '麸质过敏': '🚫 避免<span class="highlight">小麦、大麦、黑麦</span>等含麸质食物，选择米饭、玉米、荞麦等无麸质主食。'
         };
-        advice.push(healthAdvice[selected] || `关于"${selected}"：请参考通用健康饮食原则。`);
+        selected.forEach(s => {
+          if (s !== '正常') {
+            advice.push(healthAdvice[s] || `关于"${s}"：请参考通用健康饮食原则。`);
+          }
+        });
       }
 
       if (manual) {
         advice.push(`📝 收到您的补充："<span class="highlight">${manual}</span>"——我会在推荐菜谱时特别注意这一点。`);
+      }
+      if (cs.detectedRules.length > 0) {
+        advice.push(`<hr style="border-color:#ffe0b2;margin:6px 0">${cs.detectedRules.map(r => '🔍 ' + r).join('<br>')}`);
       }
 
       resultDiv.innerHTML = `<div class="ai-msg">${advice.join('</div><div class="ai-msg" style="margin-top:6px">')}</div>`;
@@ -1169,8 +2071,10 @@
     }
 
     function aiAnalyzeGoal() {
-      const selected = getSelectedTag('goalTags');
+      _cachedConstraints = null;
+      const selected = getSelectedTags('goalTags');
       const manual = getManualInput('goalManual');
+      const cs = getConstraints();
       const resultDiv = document.getElementById('goalAIResult');
       let advice = [];
 
@@ -1185,12 +2089,17 @@
         '高纤维': '🌾 每日纤维≥25g，多吃<span class="highlight">青菜、菌菇、粗粮、豆类</span>，促进肠道健康。'
       };
 
-      if (selected) {
-        advice.push(goalAdvice[selected] || `针对"${selected}"的目标，我会为您精准匹配菜谱。`);
+      if (selected && selected.length > 0) {
+        selected.forEach(s => {
+          advice.push(goalAdvice[s] || `针对"${s}"的目标，我会为您精准匹配菜谱。`);
+        });
       }
 
       if (manual) {
         advice.push(`📝 了解您的个性化需求："<span class="highlight">${manual}</span>"——我会在推荐时加以考虑。`);
+      }
+      if (cs.detectedRules.length > 0) {
+        advice.push(`<hr style="border-color:#ffe0b2;margin:6px 0">${cs.detectedRules.map(r => '🔍 ' + r).join('<br>')}`);
       }
 
       resultDiv.innerHTML = `<div class="ai-msg">${advice.join('</div><div class="ai-msg" style="margin-top:6px">')}</div>`;
@@ -1198,8 +2107,10 @@
     }
 
     function aiAnalyzeTaste() {
-      const selected = getSelectedTag('tasteTags');
+      _cachedConstraints = null;
+      const selected = getSelectedTags('tasteTags');
       const manual = getManualInput('tasteManual');
+      const cs = getConstraints();
       const resultDiv = document.getElementById('tasteAIResult');
       let advice = [];
 
@@ -1214,12 +2125,19 @@
         '五香': '⭐ 花椒、八角、桂皮、丁香、茴香，经典中式调味，适合炖煮和卤味。'
       };
 
-      if (selected) {
-        advice.push(tasteAdvice[selected] || `偏好"${selected}"口味，我会优先推荐符合您口味的菜谱。`);
+      if (selected && selected.length > 0 && !(selected.length === 1 && selected[0] === '不限制')) {
+        selected.forEach(s => {
+          if (s !== '不限制') {
+            advice.push(tasteAdvice[s] || `偏好"${s}"口味，我会优先推荐符合您口味的菜谱。`);
+          }
+        });
       }
 
       if (manual) {
         advice.push(`📝 记下您的偏好："<span class="highlight">${manual}</span>"——筛选菜谱时会避开您不喜欢的。`);
+      }
+      if (cs.detectedRules.length > 0) {
+        advice.push(`<hr style="border-color:#ffe0b2;margin:6px 0">${cs.detectedRules.map(r => '🔍 ' + r).join('<br>')}`);
       }
 
       resultDiv.innerHTML = `<div class="ai-msg">${advice.join('</div><div class="ai-msg" style="margin-top:6px">')}</div>`;
@@ -1227,8 +2145,10 @@
     }
 
     function aiAnalyzeType() {
-      const selected = getSelectedTag('typeTags');
+      _cachedConstraints = null;
+      const selected = getSelectedTags('typeTags');
       const manual = getManualInput('typeManual');
+      const cs = getConstraints();
       const resultDiv = document.getElementById('typeAIResult');
       let advice = [];
 
@@ -1250,14 +2170,21 @@
         '轻食沙拉': '🥗 轻食主义：低卡高纤，吃出轻盈体态。'
       };
 
-      if (selected && selected !== '不限制') {
-        advice.push(typeAdvice[selected] || `为您筛选"${selected}"类型的菜谱。`);
+      if (selected && selected.length > 0 && !(selected.length === 1 && selected[0] === '不限制')) {
+        selected.forEach(s => {
+          if (s !== '不限制') {
+            advice.push(typeAdvice[s] || `为您筛选"${s}"类型的菜谱。`);
+          }
+        });
       } else {
         advice.push('📋 未限制类型，所有菜谱都会参与匹配。选择类型可以更精准推荐。');
       }
 
       if (manual) {
         advice.push(`📝 收到："<span class="highlight">${manual}</span>"——我会在筛选中优先考虑。`);
+      }
+      if (cs.detectedRules.length > 0) {
+        advice.push(`<hr style="border-color:#ffe0b2;margin:6px 0">${cs.detectedRules.map(r => '🔍 ' + r).join('<br>')}`);
       }
 
       resultDiv.innerHTML = `<div class="ai-msg">${advice.join('</div><div class="ai-msg" style="margin-top:6px">')}</div>`;
@@ -1398,10 +2325,10 @@
     }
 
     function render() {
-      const goal = getSelectedTag('goalTags');
-      const taste = getSelectedTag('tasteTags');
-      const dishType = getSelectedTag('typeTags');
-      const health = getSelectedTag('healthTags');
+      const goal = getSelectedTags('goalTags');
+      const taste = getSelectedTags('tasteTags');
+      const dishType = getSelectedTags('typeTags');
+      const health = getSelectedTags('healthTags');
       const healthManual = getManualInput('healthManual');
       const goalManual = getManualInput('goalManual');
       const tasteManual = getManualInput('tasteManual');
@@ -1414,8 +2341,11 @@
         allRecipes = recommendByProfile(goal, taste, dishType, health);
       }
       if (!allRecipes || allRecipes.length === 0) {
-        document.getElementById('recipeList').innerHTML = '<p style="text-align:center;padding:30px;color:#bf8040">😕 没有完全匹配的菜谱，试试减少条件或添加食材</p>';
-        document.getElementById('aiMessages').innerHTML = '<div class="message ai-msg">调整筛选条件后重试</div>';
+        const filterMsg = ((window._filterRules && window._filterRules.length > 0) || (window._manualRules && window._manualRules.length > 0))
+          ? '<br><small>' + [...(window._filterRules||[]), ...(window._manualRules||[])].join(' | ') + '</small>'
+          : '';
+        document.getElementById('recipeList').innerHTML = '<p style="text-align:center;padding:30px;color:#bf8040">😕 没有完全匹配的菜谱，试试减少条件或添加食材' + filterMsg + '</p>';
+        document.getElementById('aiMessages').innerHTML = '<div class="message ai-msg">当前条件过于严格导致无结果，请放宽标签选择</div>';
         document.getElementById('pagination').innerHTML = '';
         document.getElementById('resultCard').classList.remove('hidden');
         return;
@@ -1495,7 +2425,7 @@
       document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth' });
     }
 
-    function generate() { currentPage = 1; render(); }
+    function generate() { _cachedConstraints = null; window._manualRules = null; currentPage = 1; render(); }
 
     // ===== 背景装饰：随机浮动食材 =====
     (function initBgDecor() {
