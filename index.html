@@ -1,0 +1,1519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智能食谱推荐</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: linear-gradient(135deg, #fff3e0 0%, #fce4c8 25%, #fff8e7 50%, #fdebd0 75%, #fff3e0 100%);
+      background-attachment: fixed;
+      color: #4a3728;
+      min-height: 100vh;
+      position: relative;
+      overflow-x: hidden;
+    }
+    /* 背景装饰 - 浮动食材 */
+    .bg-emoji {
+      display: inline-block;
+      position: fixed;
+      pointer-events: none;
+      z-index: 0;
+      animation: floatEmoji var(--duration) ease-in-out infinite;
+      animation-delay: var(--delay);
+      opacity: 0.13;
+      font-size: var(--size);
+      top: var(--top);
+      left: var(--left);
+    }
+    @keyframes floatEmoji {
+      0%   { transform: translateY(0) rotate(0deg); }
+      25%  { transform: translateY(-30px) rotate(3deg); }
+      50%  { transform: translateY(-15px) rotate(0deg); }
+      75%  { transform: translateY(-35px) rotate(-3deg); }
+      100% { transform: translateY(0) rotate(0deg); }
+    }
+    /* 暖色光斑装饰 */
+    .bg-wave {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 0;
+      background:
+        radial-gradient(ellipse at 10% 15%, rgba(255,152,0,0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 85% 75%, rgba(244,143,28,0.12) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 40%, rgba(255,183,77,0.10) 0%, transparent 60%),
+        radial-gradient(circle at 20% 60%, rgba(255,111,0,0.06) 0%, transparent 40%),
+        radial-gradient(circle at 80% 20%, rgba(255,160,0,0.06) 0%, transparent 40%);
+      animation: glowPulse 8s ease-in-out infinite alternate;
+    }
+    @keyframes glowPulse {
+      0% { opacity: 0.7; }
+      100% { opacity: 1; }
+    }
+    .app { max-width: 900px; margin: 0 auto; padding: 20px; position: relative; z-index: 1; }
+    header { text-align: center; padding: 36px 0 20px; position: relative; }
+    header h1 {
+      font-size: 32px;
+      background: linear-gradient(135deg, #e65100, #f57c00, #ff9800);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      font-weight: 800;
+      letter-spacing: 2px;
+    }
+    header p { color: #bf8040; margin-top: 8px; font-size: 15px; }
+    header::after {
+      content: '';
+      display: block;
+      width: 60px; height: 3px;
+      background: linear-gradient(90deg, #ff9800, #ffcc80);
+      margin: 14px auto 0;
+      border-radius: 2px;
+    }
+    .card {
+      background: rgba(255,255,255,0.85);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 20px rgba(180,120,40,0.10), 0 1px 3px rgba(180,120,40,0.06);
+      border: 1px solid rgba(255,183,77,0.15);
+      transition: all 0.3s;
+    }
+    .card:hover { box-shadow: 0 6px 28px rgba(180,120,40,0.14); }
+    .card h2 { font-size: 18px; margin-bottom: 16px; color: #7b4a1e; }
+    label { display: block; margin-bottom: 6px; font-weight: 600; color: #8b6914; font-size: 14px; }
+    input, select, textarea {
+      width: 100%; padding: 10px 14px;
+      border: 1.5px solid #f0d9a0;
+      border-radius: 10px; font-size: 14px;
+      background: #fffef7; color: #4a3728;
+      transition: all 0.2s;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none; border-color: #f57c00; box-shadow: 0 0 0 3px rgba(245,124,0,0.10);
+    }
+    textarea { resize: vertical; min-height: 80px; }
+    .row { display: flex; gap: 16px; }
+    .row > * { flex: 1; }
+    .btn { padding: 12px 24px; border: none; border-radius: 10px; font-size: 16px; cursor: pointer; transition: all 0.25s; font-weight: 600; }
+    .btn-primary { background: linear-gradient(135deg, #f57c00, #ff9800); color: #fff; box-shadow: 0 3px 12px rgba(245,124,0,0.25); }
+    .btn-primary:hover { background: linear-gradient(135deg, #ef6c00, #f57c00); transform: translateY(-2px); box-shadow: 0 5px 18px rgba(245,124,0,0.35); }
+    .btn-success { background: linear-gradient(135deg, #e65100, #f57c00); color: #fff; box-shadow: 0 3px 12px rgba(230,81,0,0.30); }
+    .btn-success:hover { background: linear-gradient(135deg, #bf360c, #e65100); transform: translateY(-2px); box-shadow: 0 5px 18px rgba(230,81,0,0.40); }
+    .btn-block { display: block; width: 100%; margin-top: 16px; font-size: 17px; letter-spacing: 1px; }
+    .ingredient-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .tag { background: linear-gradient(135deg, #fff3e0, #ffe0b2); color: #e65100; padding: 7px 14px; border-radius: 20px; font-size: 13px; display: flex; align-items: center; gap: 6px; border: 1px solid #ffcc80; font-weight: 500; }
+    .tag .remove { cursor: pointer; font-weight: bold; color: #bf360c; }
+    .tag .remove:hover { color: #e53935; }
+    .recipe-card { border: 1px solid #f5e1c0; border-radius: 12px; padding: 16px; margin-bottom: 12px; cursor: pointer; background: rgba(255,255,255,0.6); transition: all 0.25s; }
+    .recipe-card:hover { box-shadow: 0 4px 16px rgba(180,120,40,0.15); border-color: #f57c00; transform: translateY(-1px); background: rgba(255,255,255,0.9); }
+    .recipe-card h3 { color: #6d3a0a; margin-bottom: 8px; font-size: 17px; }
+    .recipe-meta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+    .recipe-meta span { font-size: 12px; padding: 3px 10px; border-radius: 4px; font-weight: 500; }
+    .meta-match { background: #fff3e0; color: #ef6c00; }
+    .meta-difficulty { background: #fef9e7; color: #e65100; }
+    .meta-time { background: #fff8e1; color: #f57c00; }
+    .recipe-ingredients { font-size: 13px; color: #8b6914; margin-bottom: 8px; }
+    .recipe-ingredients .missing { color: #d32f2f; }
+    .nutrition-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .nutrition-bar .label { width: 60px; font-size: 13px; color: #6d3a0a; }
+    .nutrition-bar .bar { flex: 1; height: 8px; background: #f5e1c0; border-radius: 4px; overflow: hidden; }
+    .nutrition-bar .fill { height: 100%; border-radius: 4px; transition: width 0.8s ease; }
+    .nutrition-bar .value { width: 50px; font-size: 12px; text-align: right; color: #8b6914; }
+    .ai-chat { background: linear-gradient(135deg, #fff8e1, #fff3e0); border-radius: 12px; padding: 20px; margin-top: 12px; border: 1px solid #ffe0b2; }
+    .ai-chat .message { margin-bottom: 10px; font-size: 14px; line-height: 1.6; }
+    .ai-chat .ai-msg { color: #4a3728; }
+    .ai-chat .ai-name { color: #ef6c00; font-weight: 700; }
+    .hidden { display: none; }
+    .section-title { font-size: 16px; font-weight: 700; color: #7b4a1e; margin-bottom: 12px; }
+    .select-group { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .select-option { padding: 7px 16px; border: 1.5px solid #f0d9a0; border-radius: 20px; cursor: pointer; font-size: 13px; transition: all 0.2s; background: #fffef7; color: #8b6914; }
+    .select-option:hover { border-color: #f57c00; color: #e65100; background: #fff3e0; }
+    .select-option.active { background: linear-gradient(135deg, #f57c00, #ff9800); color: #fff; border-color: #f57c00; font-weight: 600; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-top: 12px; }
+    .summary-item { text-align: center; padding: 14px; background: linear-gradient(135deg, #fff8e1, #fff3e0); border-radius: 10px; border: 1px solid #ffe0b2; }
+    .summary-item .num { font-size: 26px; font-weight: 800; color: #e65100; }
+    .summary-item .unit { font-size: 12px; color: #bf8040; margin-top: 2px; }
+    .warning { background: #fff3e0; border-left: 4px solid #ff9800; padding: 10px 14px; border-radius: 0 10px 10px 0; margin-top: 12px; font-size: 13px; color: #7b4a1e; }
+    .suggestion { background: #fbe9e7; border-left: 4px solid #f57c00; padding: 10px 14px; border-radius: 0 10px 10px 0; margin-top: 8px; font-size: 13px; color: #6d3a0a; }
+    .profile-section { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #f5e1c0; }
+    .profile-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .manual-input-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+    .manual-input-row input { flex: 1; }
+    .ai-icon { font-size: 11px; color: #f57c00; cursor: pointer; padding: 2px 8px; border: 1px dashed #ffcc80; border-radius: 12px; margin-left: 8px; transition: all 0.2s; white-space: nowrap; background: #fff8e1; }
+    .ai-icon:hover { background: #ffe0b2; color: #e65100; }
+    .ai-icon-sm { font-size: 18px; cursor: pointer; padding: 6px 10px; background: #fff3e0; border-radius: 8px; transition: all 0.2s; flex-shrink: 0; }
+    .ai-icon-sm:hover { background: #ffe0b2; transform: scale(1.1); }
+    .ai-bubble { background: linear-gradient(135deg, #fff8e1, #fff3e0); border-radius: 12px; padding: 14px 18px; margin-top: 10px; font-size: 13px; line-height: 1.7; color: #6d3a0a; border: 1px solid #ffe0b2; }
+    .ai-bubble .highlight { color: #d84315; font-weight: 700; }
+    /* 可收缩分类面板 */
+    .quick-add-wrap { margin-top: 8px; border: 1px solid #f5e1c0; border-radius: 10px; overflow: hidden; background: #fffef7; }
+    .cat-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: linear-gradient(135deg, #fff8e1, #fff3e0); cursor: pointer; font-size: 14px; font-weight: 700; user-select: none; color: #7b4a1e; transition: background 0.15s; }
+    .cat-header:hover { background: #ffe0b2; }
+    .cat-header .arrow { transition: transform 0.2s; font-size: 12px; color: #f57c00; }
+    .cat-header.open .arrow { transform: rotate(90deg); }
+    .cat-body { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; padding: 0 14px; }
+    .cat-body.open { max-height: 400px; padding: 10px 14px; }
+    .cat-body .select-option { display: inline-block; margin: 3px 4px; }
+    /* 菜谱详情展开 */
+    .recipe-card .expand-hint { font-size: 11px; color: #bf8040; margin-top: 6px; }
+    .recipe-detail { max-height: 0; overflow: hidden; transition: max-height 0.4s ease; background: #fffef7; border-top: 1px dashed #f5e1c0; margin-top: 10px; padding: 0 8px; }
+    .recipe-detail.open { max-height: 800px; padding: 12px 8px; }
+    .step-list { padding-left: 20px; margin: 8px 0; }
+    .step-list li { font-size: 13px; line-height: 1.9; color: #6d3a0a; }
+    .step-list li::marker { color: #f57c00; font-weight: bold; }
+    .video-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .video-link { display: inline-flex; align-items: center; gap: 4px; padding: 7px 14px; background: linear-gradient(135deg, #f57c00, #ff9800); color: #fff; border-radius: 8px; font-size: 12px; text-decoration: none; transition: all 0.2s; font-weight: 500; }
+    .video-link:hover { transform: translateY(-2px); box-shadow: 0 3px 12px rgba(245,124,0,0.3); }
+    .video-link.bili { background: linear-gradient(135deg, #e65100, #f57c00); }
+    .recipe-tip { font-size: 12px; color: #bf360c; background: #fff3e0; padding: 8px 14px; border-radius: 8px; margin-top: 8px; border-left: 3px solid #ff9800; }
+    .recipe-tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 11px; margin-right: 4px; background: #fff3e0; color: #e65100; }
+    /* 翻页 */
+    .pagination { display: flex; justify-content: center; align-items: center; gap: 6px; margin-top: 16px; flex-wrap: wrap; }
+    .page-btn { padding: 8px 14px; border: 1px solid #f0d9a0; border-radius: 8px; background: #fffef7; color: #7b4a1e; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.15s; }
+    .page-btn:hover { background: #fff3e0; border-color: #f57c00; }
+    .page-btn.active { background: linear-gradient(135deg, #f57c00, #ff9800); color: #fff; border-color: #f57c00; }
+    .page-btn.disabled { opacity: 0.35; cursor: default; pointer-events: none; }
+    .page-info { font-size: 13px; color: #8b6914; margin: 0 8px; }
+    /* 响应式 */
+    @media (max-width: 640px) {
+      .row { flex-direction: column; }
+      .app { padding: 12px; }
+      header h1 { font-size: 24px; }
+      .card { padding: 18px; }
+      .page-btn { padding: 6px 10px; font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-wave"></div>
+  <div class="app">
+    <header>
+      <h1>🍳 智能食谱推荐</h1>
+      <p>输入食材，AI 为您推荐美味又健康的菜谱</p>
+    </header>
+
+    <div class="card">
+      <h2>📋 用户信息</h2>
+      <!-- 健康状态 -->
+      <div class="profile-section">
+        <label>🩺 健康状态 <span class="ai-icon" onclick="aiAnalyzeHealth()" title="AI分析">🤖 AI解析</span></label>
+        <div class="select-group" id="healthTags">
+          <span class="select-option active" data-value="正常">正常</span>
+          <span class="select-option" data-value="高血压">高血压</span>
+          <span class="select-option" data-value="糖尿病">糖尿病</span>
+          <span class="select-option" data-value="高血脂">高血脂</span>
+          <span class="select-option" data-value="痛风">痛风</span>
+          <span class="select-option" data-value="孕期">孕期</span>
+          <span class="select-option" data-value="哺乳期">哺乳期</span>
+          <span class="select-option" data-value="花生过敏">花生过敏</span>
+          <span class="select-option" data-value="海鲜过敏">海鲜过敏</span>
+          <span class="select-option" data-value="乳糖不耐受">乳糖不耐受</span>
+          <span class="select-option" data-value="麸质过敏">麸质过敏</span>
+        </div>
+        <div class="manual-input-row">
+          <input type="text" id="healthManual" placeholder="手动输入补充信息（如：轻度脂肪肝、胃酸过多...）">
+          <span class="ai-icon-sm" onclick="aiAnalyzeHealth()" title="AI解析健康状态">🤖</span>
+        </div>
+        <div id="healthAIResult" class="ai-bubble hidden"></div>
+      </div>
+
+      <!-- 饮食目标 -->
+      <div class="profile-section">
+        <label>🎯 饮食目标 <span class="ai-icon" onclick="aiAnalyzeGoal()" title="AI分析">🤖 AI解析</span></label>
+        <div class="select-group" id="goalTags">
+          <span class="select-option active" data-value="均衡饮食">均衡饮食</span>
+          <span class="select-option" data-value="减脂">减脂</span>
+          <span class="select-option" data-value="增肌">增肌</span>
+          <span class="select-option" data-value="维持体重">维持体重</span>
+          <span class="select-option" data-value="控糖">控糖</span>
+          <span class="select-option" data-value="高蛋白">高蛋白</span>
+          <span class="select-option" data-value="低钠">低钠</span>
+          <span class="select-option" data-value="高纤维">高纤维</span>
+        </div>
+        <div class="manual-input-row">
+          <input type="text" id="goalManual" placeholder="手动输入个性化目标（如：增重但不长肚子、备赛减脂...）">
+          <span class="ai-icon-sm" onclick="aiAnalyzeGoal()" title="AI解析饮食目标">🤖</span>
+        </div>
+        <div id="goalAIResult" class="ai-bubble hidden"></div>
+      </div>
+
+      <!-- 口味偏好 -->
+      <div class="profile-section">
+        <label>🌶️ 口味偏好 <span class="ai-icon" onclick="aiAnalyzeTaste()" title="AI分析">🤖 AI解析</span></label>
+        <div class="select-group" id="tasteTags">
+          <span class="select-option active" data-value="不限制">不限制</span>
+          <span class="select-option" data-value="清淡">清淡</span>
+          <span class="select-option" data-value="微辣">微辣</span>
+          <span class="select-option" data-value="麻辣">麻辣</span>
+          <span class="select-option" data-value="酸甜">酸甜</span>
+          <span class="select-option" data-value="咸鲜">咸鲜</span>
+          <span class="select-option" data-value="甜口">甜口</span>
+          <span class="select-option" data-value="重口味">重口味</span>
+          <span class="select-option" data-value="五香">五香</span>
+        </div>
+        <div class="manual-input-row">
+          <input type="text" id="tasteManual" placeholder="手动输入口味偏好（如：不吃香菜、喜欢酸辣、忌蒜...）">
+          <span class="ai-icon-sm" onclick="aiAnalyzeTaste()" title="AI解析口味偏好">🤖</span>
+        </div>
+        <div id="tasteAIResult" class="ai-bubble hidden"></div>
+      </div>
+
+      <!-- 菜品类型 -->
+      <div class="profile-section">
+        <label>🍽️ 菜品类型 <span class="ai-icon" onclick="aiAnalyzeType()" title="AI分析">🤖 AI解析</span></label>
+        <div class="select-group" id="typeTags">
+          <span class="select-option active" data-value="不限制">不限制</span>
+          <span class="select-option" data-value="肉菜">🥩 肉菜</span>
+          <span class="select-option" data-value="素菜">🥬 素菜</span>
+          <span class="select-option" data-value="海鲜">🐟 海鲜</span>
+          <span class="select-option" data-value="汤">🍲 汤</span>
+          <span class="select-option" data-value="主食">🍚 主食</span>
+          <span class="select-option" data-value="凉菜">🧊 凉菜</span>
+          <span class="select-option" data-value="小吃">🥟 小吃</span>
+          <span class="select-option" data-value="饮料甜品">🍹 饮料甜品</span>
+          <span class="select-option" data-value="日韩">🍣 日韩</span>
+          <span class="select-option" data-value="西式">🍝 西式</span>
+          <span class="select-option" data-value="东南亚">🍛 东南亚</span>
+          <span class="select-option" data-value="蛋类">🥚 蛋类</span>
+          <span class="select-option" data-value="豆制品">🫘 豆制品</span>
+          <span class="select-option" data-value="砂锅煲">🫕 砂锅煲</span>
+          <span class="select-option" data-value="轻食沙拉">🥗 轻食沙拉</span>
+        </div>
+        <div class="manual-input-row">
+          <input type="text" id="typeManual" placeholder="手动补充（如：下饭菜、夜宵、减脂餐...）">
+          <span class="ai-icon-sm" onclick="aiAnalyzeType()" title="AI解析菜品类型">🤖</span>
+        </div>
+        <div id="typeAIResult" class="ai-bubble hidden"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🥬 我的食材</h2>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="ingredientInput" placeholder="输入食材名称，回车添加（如：鸡蛋、番茄、牛肉）">
+        <button class="btn btn-primary" onclick="addIngredient()">添加</button>
+      </div>
+      <div class="ingredient-tags" id="ingredientTags"></div>
+      <div class="quick-add-wrap">
+        <div class="cat-header" onclick="toggleCat(this)"><span>🥩 肉类</span><span class="arrow">▶</span></div>
+        <div class="cat-body" id="catMeat">
+          <span class="select-option" onclick="quickAdd('牛肉')">牛肉</span><span class="select-option" onclick="quickAdd('鸡胸肉')">鸡胸肉</span><span class="select-option" onclick="quickAdd('鸡腿')">鸡腿</span><span class="select-option" onclick="quickAdd('鸡翅')">鸡翅</span><span class="select-option" onclick="quickAdd('五花肉')">五花肉</span><span class="select-option" onclick="quickAdd('猪肉')">猪肉</span><span class="select-option" onclick="quickAdd('排骨')">排骨</span><span class="select-option" onclick="quickAdd('羊肉')">羊肉</span><span class="select-option" onclick="quickAdd('鸭')">鸭</span><span class="select-option" onclick="quickAdd('腊肠')">腊肠</span><span class="select-option" onclick="quickAdd('火腿')">火腿</span><span class="select-option" onclick="quickAdd('培根')">培根</span>
+        </div>
+      </div>
+      <div class="quick-add-wrap">
+        <div class="cat-header" onclick="toggleCat(this)"><span>🐟 海鲜</span><span class="arrow">▶</span></div>
+        <div class="cat-body" id="catSeafood">
+          <span class="select-option" onclick="quickAdd('虾仁')">虾仁</span><span class="select-option" onclick="quickAdd('虾')">虾</span><span class="select-option" onclick="quickAdd('三文鱼')">三文鱼</span><span class="select-option" onclick="quickAdd('鲈鱼')">鲈鱼</span><span class="select-option" onclick="quickAdd('草鱼')">草鱼</span><span class="select-option" onclick="quickAdd('鲤鱼')">鲤鱼</span><span class="select-option" onclick="quickAdd('带鱼')">带鱼</span><span class="select-option" onclick="quickAdd('蛤蜊')">蛤蜊</span><span class="select-option" onclick="quickAdd('扇贝')">扇贝</span><span class="select-option" onclick="quickAdd('螃蟹')">螃蟹</span><span class="select-option" onclick="quickAdd('鱿鱼')">鱿鱼</span><span class="select-option" onclick="quickAdd('蛏子')">蛏子</span><span class="select-option" onclick="quickAdd('虾皮')">虾皮</span><span class="select-option" onclick="quickAdd('海参')">海参</span><span class="select-option" onclick="quickAdd('金枪鱼')">金枪鱼</span>
+        </div>
+      </div>
+      <div class="quick-add-wrap">
+        <div class="cat-header" onclick="toggleCat(this)"><span>🥬 蔬菜</span><span class="arrow">▶</span></div>
+        <div class="cat-body" id="catVeg">
+          <span class="select-option" onclick="quickAdd('番茄')">番茄</span><span class="select-option" onclick="quickAdd('土豆')">土豆</span><span class="select-option" onclick="quickAdd('青菜')">青菜</span><span class="select-option" onclick="quickAdd('青椒')">青椒</span><span class="select-option" onclick="quickAdd('茄子')">茄子</span><span class="select-option" onclick="quickAdd('西兰花')">西兰花</span><span class="select-option" onclick="quickAdd('黄瓜')">黄瓜</span><span class="select-option" onclick="quickAdd('胡萝卜')">胡萝卜</span><span class="select-option" onclick="quickAdd('生菜')">生菜</span><span class="select-option" onclick="quickAdd('四季豆')">四季豆</span><span class="select-option" onclick="quickAdd('洋葱')">洋葱</span><span class="select-option" onclick="quickAdd('豆芽')">豆芽</span><span class="select-option" onclick="quickAdd('南瓜')">南瓜</span><span class="select-option" onclick="quickAdd('冬瓜')">冬瓜</span><span class="select-option" onclick="quickAdd('白萝卜')">白萝卜</span><span class="select-option" onclick="quickAdd('韭菜')">韭菜</span><span class="select-option" onclick="quickAdd('大白菜')">大白菜</span><span class="select-option" onclick="quickAdd('娃娃菜')">娃娃菜</span><span class="select-option" onclick="quickAdd('菜心')">菜心</span><span class="select-option" onclick="quickAdd('芹菜')">芹菜</span><span class="select-option" onclick="quickAdd('玉米')">玉米</span><span class="select-option" onclick="quickAdd('苦瓜')">苦瓜</span><span class="select-option" onclick="quickAdd('花菜')">花菜</span><span class="select-option" onclick="quickAdd('莲藕')">莲藕</span><span class="select-option" onclick="quickAdd('山药')">山药</span><span class="select-option" onclick="quickAdd('竹笋')">竹笋</span>
+        </div>
+      </div>
+      <div class="quick-add-wrap">
+        <div class="cat-header" onclick="toggleCat(this)"><span>🍄 菌菇豆制品</span><span class="arrow">▶</span></div>
+        <div class="cat-body" id="catMush">
+          <span class="select-option" onclick="quickAdd('蘑菇')">蘑菇</span><span class="select-option" onclick="quickAdd('香菇')">香菇</span><span class="select-option" onclick="quickAdd('木耳')">木耳</span><span class="select-option" onclick="quickAdd('金针菇')">金针菇</span><span class="select-option" onclick="quickAdd('杏鲍菇')">杏鲍菇</span><span class="select-option" onclick="quickAdd('豆腐')">豆腐</span><span class="select-option" onclick="quickAdd('豆皮')">豆皮</span><span class="select-option" onclick="quickAdd('腐竹')">腐竹</span><span class="select-option" onclick="quickAdd('豆豉')">豆豉</span>
+        </div>
+      </div>
+      <div class="quick-add-wrap">
+        <div class="cat-header" onclick="toggleCat(this)"><span>🥚 蛋奶</span><span class="arrow">▶</span></div>
+        <div class="cat-body" id="catEgg">
+          <span class="select-option" onclick="quickAdd('鸡蛋')">鸡蛋</span><span class="select-option" onclick="quickAdd('鸭蛋')">鸭蛋</span><span class="select-option" onclick="quickAdd('皮蛋')">皮蛋</span><span class="select-option" onclick="quickAdd('咸鸭蛋')">咸鸭蛋</span><span class="select-option" onclick="quickAdd('牛奶')">牛奶</span><span class="select-option" onclick="quickAdd('酸奶')">酸奶</span><span class="select-option" onclick="quickAdd('黄油')">黄油</span><span class="select-option" onclick="quickAdd('奶酪')">奶酪</span><span class="select-option" onclick="quickAdd('芝士')">芝士</span><span class="select-option" onclick="quickAdd('奶油')">奶油</span>
+        </div>
+      </div>
+      <div class="quick-add-wrap">
+        <div class="cat-header" onclick="toggleCat(this)"><span>🍚 主食</span><span class="arrow">▶</span></div>
+        <div class="cat-body" id="catStaple">
+          <span class="select-option" onclick="quickAdd('米饭')">米饭</span><span class="select-option" onclick="quickAdd('面条')">面条</span><span class="select-option" onclick="quickAdd('意大利面')">意大利面</span><span class="select-option" onclick="quickAdd('河粉')">河粉</span><span class="select-option" onclick="quickAdd('米粉')">米粉</span><span class="select-option" onclick="quickAdd('红薯粉')">红薯粉</span><span class="select-option" onclick="quickAdd('乌冬面')">乌冬面</span><span class="select-option" onclick="quickAdd('吐司')">吐司</span><span class="select-option" onclick="quickAdd('红薯')">红薯</span><span class="select-option" onclick="quickAdd('燕麦')">燕麦</span><span class="select-option" onclick="quickAdd('大米')">大米</span><span class="select-option" onclick="quickAdd('藜麦')">藜麦</span><span class="select-option" onclick="quickAdd('面粉')">面粉</span><span class="select-option" onclick="quickAdd('粉丝')">粉丝</span><span class="select-option" onclick="quickAdd('粉条')">粉条</span>
+        </div>
+      </div>
+      <div class="quick-add-wrap">
+        <div class="cat-header" onclick="toggleCat(this)"><span>🥑 水果/其他</span><span class="arrow">▶</span></div>
+        <div class="cat-body" id="catFruit">
+          <span class="select-option" onclick="quickAdd('牛油果')">牛油果</span><span class="select-option" onclick="quickAdd('柠檬')">柠檬</span><span class="select-option" onclick="quickAdd('菠萝')">菠萝</span><span class="select-option" onclick="quickAdd('苹果')">苹果</span><span class="select-option" onclick="quickAdd('香蕉')">香蕉</span><span class="select-option" onclick="quickAdd('草莓')">草莓</span><span class="select-option" onclick="quickAdd('芒果')">芒果</span><span class="select-option" onclick="quickAdd('西瓜')">西瓜</span><span class="select-option" onclick="quickAdd('蓝莓')">蓝莓</span><span class="select-option" onclick="quickAdd('橙子')">橙子</span><span class="select-option" onclick="quickAdd('花生')">花生</span><span class="select-option" onclick="quickAdd('芝麻')">芝麻</span><span class="select-option" onclick="quickAdd('蜂蜜')">蜂蜜</span><span class="select-option" onclick="quickAdd('枸杞')">枸杞</span><span class="select-option" onclick="quickAdd('红枣')">红枣</span><span class="select-option" onclick="quickAdd('银耳')">银耳</span><span class="select-option" onclick="quickAdd('紫菜')">紫菜</span><span class="select-option" onclick="quickAdd('海带')">海带</span><span class="select-option" onclick="quickAdd('榨菜')">榨菜</span><span class="select-option" onclick="quickAdd('腰果')">腰果</span>
+        </div>
+      </div>
+      <div class="quick-add-wrap">
+        <div class="cat-header" onclick="toggleCat(this)"><span>🍰 烘焙甜品</span><span class="arrow">▶</span></div>
+        <div class="cat-body" id="catDessert">
+          <span class="select-option" onclick="quickAdd('巧克力')">巧克力</span><span class="select-option" onclick="quickAdd('抹茶粉')">抹茶粉</span><span class="select-option" onclick="quickAdd('可可粉')">可可粉</span><span class="select-option" onclick="quickAdd('椰奶')">椰奶</span><span class="select-option" onclick="quickAdd('西米')">西米</span><span class="select-option" onclick="quickAdd('吉利丁')">吉利丁</span><span class="select-option" onclick="quickAdd('红豆')">红豆</span><span class="select-option" onclick="quickAdd('绿豆')">绿豆</span><span class="select-option" onclick="quickAdd('红糖')">红糖</span><span class="select-option" onclick="quickAdd('咖啡')">咖啡</span><span class="select-option" onclick="quickAdd('茶叶')">茶叶</span><span class="select-option" onclick="quickAdd('仙草')">仙草</span><span class="select-option" onclick="quickAdd('芋头')">芋头</span><span class="select-option" onclick="quickAdd('糯米粉')">糯米粉</span><span class="select-option" onclick="quickAdd('酒酿')">酒酿</span>
+        </div>
+      </div>
+      <button class="btn btn-success btn-block" onclick="generate()">🔍 获取推荐菜谱</button>
+    </div>
+
+    <div class="card hidden" id="resultCard">
+      <h2>🍽️ 推荐菜谱</h2>
+      <div id="recipeList"></div>
+      <div id="pagination" class="pagination"></div>
+
+      <div class="ai-chat" id="aiChat">
+        <div class="section-title">🤖 AI 饮食顾问建议</div>
+        <div id="aiMessages"></div>
+      </div>
+
+      <div class="section-title" style="margin-top:20px">📊 今日营养总览</div>
+      <div class="summary-grid" id="nutritionSummary"></div>
+      <div id="nutritionBars"></div>
+      <div id="warnings"></div>
+      <div id="suggestions"></div>
+    </div>
+  </div>
+
+  <script>
+    // ===== 数据 =====
+    const recipes = [
+      // 鸡肉类
+      { name:"宫保鸡丁",type:"肉菜", ingredients:["鸡胸肉","花生","青椒","干辣椒","葱"], difficulty:"中等", time:20, taste:"麻辣", nutrition:{calories:280,protein:26,carbs:10,fat:14,fiber:2,vitaminC:20} },
+      { name:"可乐鸡翅",type:"肉菜", ingredients:["鸡翅","可乐","葱","姜"], difficulty:"简单", time:25, taste:"甜口", nutrition:{calories:340,protein:18,carbs:20,fat:20,fiber:0,vitaminC:3} },
+      { name:"辣子鸡",type:"肉菜", ingredients:["鸡腿","干辣椒","花椒","葱","姜","蒜"], difficulty:"中等", time:30, taste:"麻辣", nutrition:{calories:320,protein:24,carbs:6,fat:22,fiber:1,vitaminC:5} },
+      { name:"香菇滑鸡",type:"肉菜", ingredients:["鸡腿","香菇","姜","葱"], difficulty:"简单", time:25, taste:"清淡", nutrition:{calories:260,protein:22,carbs:8,fat:14,fiber:2,vitaminC:3} },
+      { name:"鸡肉沙拉",type:"轻食沙拉", ingredients:["鸡胸肉","生菜","樱桃番茄","牛油果","柠檬"], difficulty:"简单", time:15, taste:"清淡", nutrition:{calories:350,protein:28,carbs:12,fat:20,fiber:6,vitaminC:35} },
+      { name:"盐焗鸡",type:"肉菜", ingredients:["鸡","姜","葱"], difficulty:"中等", time:60, taste:"咸鲜", nutrition:{calories:380,protein:32,carbs:2,fat:26,fiber:0,vitaminC:2} },
+      { name:"烤鸡翅",type:"肉菜", ingredients:["鸡翅","蒜","蜂蜜","酱油"], difficulty:"简单", time:30, taste:"甜口", nutrition:{calories:310,protein:17,carbs:12,fat:21,fiber:0,vitaminC:2} },
+      // 牛肉类
+      { name:"水煮牛肉",type:"肉菜", ingredients:["牛肉","豆芽","干辣椒","花椒","蒜"], difficulty:"中等", time:25, taste:"麻辣", nutrition:{calories:310,protein:28,carbs:8,fat:18,fiber:3,vitaminC:15} },
+      { name:"黑椒牛柳",type:"肉菜", ingredients:["牛肉","青椒","洋葱","黑胡椒","蒜"], difficulty:"中等", time:15, taste:"咸鲜", nutrition:{calories:280,protein:26,carbs:10,fat:16,fiber:2,vitaminC:25} },
+      { name:"咖喱牛肉",type:"东南亚", ingredients:["牛肉","土豆","胡萝卜","洋葱","咖喱粉"], difficulty:"中等", time:40, taste:"咸鲜", nutrition:{calories:360,protein:24,carbs:28,fat:18,fiber:4,vitaminC:15} },
+      { name:"凉拌牛肉",type:"凉菜", ingredients:["牛肉","黄瓜","香菜","蒜"], difficulty:"简单", time:15, taste:"微辣", nutrition:{calories:220,protein:28,carbs:5,fat:10,fiber:2,vitaminC:10} },
+      { name:"萝卜牛腩汤",type:"汤", ingredients:["牛肉","白萝卜","姜","葱"], difficulty:"中等", time:90, taste:"清淡", nutrition:{calories:280,protein:26,carbs:10,fat:14,fiber:3,vitaminC:25} },
+      // 猪肉类
+      { name:"糖醋里脊",type:"肉菜", ingredients:["猪肉","番茄酱","糖","醋","鸡蛋"], difficulty:"中等", time:25, taste:"酸甜", nutrition:{calories:380,protein:18,carbs:28,fat:22,fiber:1,vitaminC:8} },
+      { name:"回锅肉",type:"肉菜", ingredients:["五花肉","蒜苗","豆瓣酱","青椒","姜","蒜"], difficulty:"中等", time:20, taste:"微辣", nutrition:{calories:400,protein:14,carbs:10,fat:32,fiber:2,vitaminC:18} },
+      { name:"红烧肉",type:"肉菜", ingredients:["五花肉","酱油","糖","葱","姜","八角"], difficulty:"中等", time:60, taste:"咸鲜", nutrition:{calories:420,protein:12,carbs:12,fat:36,fiber:1,vitaminC:2} },
+      { name:"鱼香肉丝",type:"肉菜", ingredients:["猪肉","木耳","胡萝卜","青椒","蒜","姜"], difficulty:"中等", time:18, taste:"酸甜", nutrition:{calories:260,protein:16,carbs:14,fat:16,fiber:3,vitaminC:18} },
+      { name:"东坡肉",type:"肉菜", ingredients:["五花肉","酱油","黄酒","葱","姜"], difficulty:"中等", time:90, taste:"咸鲜", nutrition:{calories:450,protein:10,carbs:8,fat:40,fiber:0,vitaminC:1} },
+      { name:"蒜苗炒肉",type:"肉菜", ingredients:["猪肉","蒜苗","姜","蒜"], difficulty:"简单", time:12, taste:"咸鲜", nutrition:{calories:260,protein:15,carbs:8,fat:18,fiber:2,vitaminC:12} },
+      // 海鲜类
+      { name:"香煎三文鱼",type:"海鲜", ingredients:["三文鱼","柠檬","盐","黑胡椒"], difficulty:"简单", time:12, taste:"清淡", nutrition:{calories:350,protein:30,carbs:2,fat:24,fiber:0,vitaminC:10} },
+      { name:"三文鱼沙拉",type:"轻食沙拉", ingredients:["三文鱼","牛油果","生菜","柠檬"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:380,protein:28,carbs:10,fat:26,fiber:5,vitaminC:18} },
+      { name:"三文鱼炒饭",type:"日韩", ingredients:["三文鱼","米饭","鸡蛋","青豆","葱"], difficulty:"简单", time:15, taste:"咸鲜", nutrition:{calories:420,protein:26,carbs:40,fat:18,fiber:3,vitaminC:8} },
+      { name:"清蒸鲈鱼",type:"海鲜", ingredients:["鲈鱼","葱","姜","酱油"], difficulty:"中等", time:20, taste:"清淡", nutrition:{calories:180,protein:28,carbs:3,fat:6,fiber:0,vitaminC:3} },
+      { name:"酸菜鱼",type:"海鲜", ingredients:["草鱼","酸菜","干辣椒","花椒","姜","蒜"], difficulty:"中等", time:30, taste:"麻辣", nutrition:{calories:290,protein:24,carbs:6,fat:18,fiber:2,vitaminC:10} },
+      { name:"红烧带鱼",type:"海鲜", ingredients:["带鱼","葱","姜","蒜","酱油"], difficulty:"中等", time:25, taste:"咸鲜", nutrition:{calories:260,protein:22,carbs:8,fat:16,fiber:0,vitaminC:2} },
+      { name:"炒蛤蜊",type:"海鲜", ingredients:["蛤蜊","蒜","干辣椒","葱","姜"], difficulty:"简单", time:12, taste:"微辣", nutrition:{calories:150,protein:20,carbs:5,fat:5,fiber:0,vitaminC:5} },
+      { name:"蒜蓉扇贝",type:"海鲜", ingredients:["扇贝","蒜","粉丝","葱"], difficulty:"简单", time:15, taste:"清淡", nutrition:{calories:180,protein:18,carbs:12,fat:6,fiber:1,vitaminC:5} },
+      { name:"椒盐虾",type:"海鲜", ingredients:["虾","椒盐","蒜","青椒"], difficulty:"简单", time:15, taste:"咸鲜", nutrition:{calories:220,protein:22,carbs:6,fat:12,fiber:1,vitaminC:12} },
+      { name:"白灼虾",type:"海鲜", ingredients:["虾","姜"], difficulty:"简单", time:8, taste:"清淡", nutrition:{calories:140,protein:24,carbs:1,fat:3,fiber:0,vitaminC:2} },
+      // 蔬菜类
+      { name:"蚝油生菜",type:"素菜", ingredients:["生菜","蒜","蚝油"], difficulty:"简单", time:5, taste:"清淡", nutrition:{calories:50,protein:2,carbs:6,fat:2,fiber:2,vitaminC:10} },
+      { name:"地三鲜",type:"素菜", ingredients:["土豆","茄子","青椒","蒜"], difficulty:"中等", time:20, taste:"咸鲜", nutrition:{calories:220,protein:5,carbs:24,fat:12,fiber:5,vitaminC:30} },
+      { name:"干煸四季豆",type:"素菜", ingredients:["四季豆","干辣椒","蒜","花椒"], difficulty:"中等", time:15, taste:"麻辣", nutrition:{calories:160,protein:5,carbs:12,fat:10,fiber:4,vitaminC:18} },
+      { name:"西兰花炒虾仁",type:"海鲜", ingredients:["西兰花","虾仁","蒜"], difficulty:"简单", time:12, taste:"清淡", nutrition:{calories:160,protein:22,carbs:10,fat:4,fiber:4,vitaminC:60} },
+      { name:"白灼菜心",type:"素菜", ingredients:["菜心","蒜"], difficulty:"简单", time:5, taste:"清淡", nutrition:{calories:45,protein:3,carbs:5,fat:2,fiber:2,vitaminC:35} },
+      { name:"凉拌黄瓜",type:"凉菜", ingredients:["黄瓜","蒜","醋","辣椒油"], difficulty:"简单", time:5, taste:"微辣", nutrition:{calories:60,protein:1,carbs:8,fat:3,fiber:2,vitaminC:8} },
+      { name:"蒜蓉西兰花",type:"素菜", ingredients:["西兰花","蒜"], difficulty:"简单", time:8, taste:"清淡", nutrition:{calories:70,protein:4,carbs:8,fat:3,fiber:3,vitaminC:55} },
+      { name:"醋溜白菜",type:"素菜", ingredients:["大白菜","醋","干辣椒","蒜"], difficulty:"简单", time:8, taste:"酸甜", nutrition:{calories:65,protein:2,carbs:10,fat:3,fiber:3,vitaminC:28} },
+      { name:"清炒豆芽",type:"素菜", ingredients:["豆芽","青椒","蒜"], difficulty:"简单", time:6, taste:"清淡", nutrition:{calories:70,protein:5,carbs:8,fat:3,fiber:2,vitaminC:20} },
+      { name:"鱼香茄子",type:"素菜", ingredients:["茄子","蒜","姜","豆瓣酱"], difficulty:"中等", time:15, taste:"酸甜", nutrition:{calories:180,protein:4,carbs:16,fat:12,fiber:3,vitaminC:10} },
+      { name:"番茄炒蛋",type:"蛋类", ingredients:["番茄","鸡蛋","葱"], difficulty:"简单", time:10, taste:"酸甜", nutrition:{calories:180,protein:12,carbs:8,fat:10,fiber:2,vitaminC:30} },
+      { name:"洋葱炒鸡蛋",type:"蛋类", ingredients:["洋葱","鸡蛋"], difficulty:"简单", time:8, taste:"咸鲜", nutrition:{calories:170,protein:10,carbs:8,fat:11,fiber:1,vitaminC:8} },
+      { name:"韭菜炒蛋",type:"蛋类", ingredients:["韭菜","鸡蛋","蒜"], difficulty:"简单", time:8, taste:"咸鲜", nutrition:{calories:190,protein:12,carbs:6,fat:12,fiber:2,vitaminC:10} },
+      { name:"芹菜炒牛肉",type:"肉菜", ingredients:["牛肉","芹菜","姜","蒜"], difficulty:"中等", time:15, taste:"咸鲜", nutrition:{calories:240,protein:24,carbs:6,fat:14,fiber:3,vitaminC:12} },
+      { name:"炒合菜",type:"素菜", ingredients:["豆芽","韭菜","鸡蛋","粉条"], difficulty:"简单", time:12, taste:"咸鲜", nutrition:{calories:200,protein:12,carbs:18,fat:10,fiber:2,vitaminC:12} },
+      // 豆腐类
+      { name:"麻婆豆腐",type:"豆制品", ingredients:["豆腐","猪肉","豆瓣酱","花椒","蒜","葱"], difficulty:"中等", time:15, taste:"麻辣", nutrition:{calories:220,protein:16,carbs:8,fat:14,fiber:2,vitaminC:3} },
+      { name:"家常豆腐",type:"豆制品", ingredients:["豆腐","青椒","蒜"], difficulty:"简单", time:15, taste:"咸鲜", nutrition:{calories:140,protein:12,carbs:6,fat:8,fiber:2,vitaminC:18} },
+      { name:"皮蛋豆腐",type:"凉菜", ingredients:["豆腐","皮蛋","香菜","蒜","醋"], difficulty:"简单", time:5, taste:"清淡", nutrition:{calories:160,protein:14,carbs:4,fat:10,fiber:1,vitaminC:3} },
+      { name:"红烧豆腐",type:"豆制品", ingredients:["豆腐","酱油","葱","蒜"], difficulty:"简单", time:12, taste:"咸鲜", nutrition:{calories:150,protein:13,carbs:5,fat:9,fiber:1,vitaminC:2} },
+      { name:"豆腐炒鸡蛋",type:"蛋类", ingredients:["豆腐","鸡蛋","葱"], difficulty:"简单", time:12, taste:"清淡", nutrition:{calories:160,protein:16,carbs:6,fat:9,fiber:2,vitaminC:5} },
+      // 菌菇类
+      { name:"蘑菇炒蛋",type:"蛋类", ingredients:["蘑菇","鸡蛋","葱"], difficulty:"简单", time:12, taste:"清淡", nutrition:{calories:140,protein:13,carbs:5,fat:8,fiber:2,vitaminC:3} },
+      { name:"牛肉炒蘑菇",type:"肉菜", ingredients:["牛肉","蘑菇","蒜"], difficulty:"中等", time:18, taste:"咸鲜", nutrition:{calories:240,protein:24,carbs:6,fat:14,fiber:2,vitaminC:5} },
+      { name:"菌菇汤",type:"汤", ingredients:["蘑菇","金针菇","杏鲍菇","葱","姜"], difficulty:"简单", time:15, taste:"清淡", nutrition:{calories:90,protein:6,carbs:10,fat:3,fiber:4,vitaminC:5} },
+      { name:"香菇青菜",type:"素菜", ingredients:["香菇","青菜","蒜"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:80,protein:4,carbs:8,fat:4,fiber:3,vitaminC:22} },
+      // 汤类
+      { name:"番茄蛋花汤",type:"汤", ingredients:["番茄","鸡蛋","葱"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:100,protein:6,carbs:6,fat:5,fiber:1,vitaminC:18} },
+      { name:"紫菜蛋花汤",type:"汤", ingredients:["紫菜","鸡蛋","葱","虾皮"], difficulty:"简单", time:5, taste:"清淡", nutrition:{calories:80,protein:8,carbs:3,fat:4,fiber:1,vitaminC:2} },
+      { name:"酸辣汤",type:"汤", ingredients:["豆腐","木耳","鸡蛋","醋","胡椒粉"], difficulty:"简单", time:12, taste:"酸甜", nutrition:{calories:120,protein:10,carbs:8,fat:6,fiber:2,vitaminC:3} },
+      { name:"冬瓜排骨汤",type:"汤", ingredients:["排骨","冬瓜","姜","葱"], difficulty:"中等", time:60, taste:"清淡", nutrition:{calories:250,protein:18,carbs:8,fat:16,fiber:2,vitaminC:15} },
+      { name:"玉米排骨汤",type:"汤", ingredients:["排骨","玉米","胡萝卜","姜"], difficulty:"中等", time:60, taste:"清淡", nutrition:{calories:280,protein:18,carbs:18,fat:16,fiber:3,vitaminC:10} },
+      { name:"番茄豆腐汤",type:"汤", ingredients:["番茄","豆腐","葱"], difficulty:"简单", time:15, taste:"清淡", nutrition:{calories:100,protein:10,carbs:8,fat:4,fiber:3,vitaminC:28} },
+      { name:"青菜豆腐汤",type:"汤", ingredients:["青菜","豆腐","姜"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:80,protein:8,carbs:5,fat:3,fiber:3,vitaminC:20} },
+      { name:"蛋花汤",type:"汤", ingredients:["鸡蛋","葱"], difficulty:"简单", time:8, taste:"清淡", nutrition:{calories:90,protein:8,carbs:3,fat:5,fiber:0,vitaminC:2} },
+      // 主食/饭面类
+      { name:"扬州炒饭",type:"主食", ingredients:["米饭","鸡蛋","虾仁","火腿","青豆","葱"], difficulty:"中等", time:15, taste:"咸鲜", nutrition:{calories:450,protein:22,carbs:45,fat:20,fiber:3,vitaminC:8} },
+      { name:"蛋炒饭",type:"主食", ingredients:["米饭","鸡蛋","葱"], difficulty:"简单", time:8, taste:"咸鲜", nutrition:{calories:380,protein:14,carbs:48,fat:16,fiber:1,vitaminC:2} },
+      { name:"番茄意面",type:"西式", ingredients:["意大利面","番茄","蒜","洋葱","橄榄油"], difficulty:"中等", time:20, taste:"酸甜", nutrition:{calories:420,protein:14,carbs:55,fat:16,fiber:4,vitaminC:18} },
+      { name:"奶油蘑菇意面",type:"西式", ingredients:["意大利面","蘑菇","奶油","蒜"], difficulty:"中等", time:20, taste:"清淡", nutrition:{calories:480,protein:16,carbs:50,fat:24,fiber:3,vitaminC:2} },
+      { name:"炸酱面",type:"主食", ingredients:["面条","猪肉","黄瓜","豆瓣酱","葱","蒜"], difficulty:"中等", time:25, taste:"咸鲜", nutrition:{calories:500,protein:22,carbs:55,fat:22,fiber:3,vitaminC:6} },
+      { name:"牛肉面",type:"主食", ingredients:["面条","牛肉","青菜","葱","姜"], difficulty:"中等", time:40, taste:"咸鲜", nutrition:{calories:480,protein:28,carbs:50,fat:18,fiber:3,vitaminC:8} },
+      { name:"番茄牛油果沙拉",type:"轻食沙拉", ingredients:["牛油果","番茄","洋葱","柠檬","橄榄油"], difficulty:"简单", time:8, taste:"清淡", nutrition:{calories:280,protein:4,carbs:16,fat:24,fiber:8,vitaminC:28} },
+      { name:"牛油果吐司",type:"小吃", ingredients:["牛油果","吐司","鸡蛋","盐","黑胡椒"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:320,protein:12,carbs:24,fat:20,fiber:6,vitaminC:6} },
+      { name:"牛油果拌饭",type:"主食", ingredients:["牛油果","米饭","酱油","芝麻"], difficulty:"简单", time:5, taste:"咸鲜", nutrition:{calories:360,protein:8,carbs:48,fat:16,fiber:5,vitaminC:4} },
+      { name:"牛油果奶昔",type:"饮料甜品", ingredients:["牛油果","牛奶","蜂蜜"], difficulty:"简单", time:5, taste:"甜口", nutrition:{calories:250,protein:6,carbs:22,fat:18,fiber:5,vitaminC:8} },
+      // 其他
+      { name:"南瓜粥",type:"主食", ingredients:["南瓜","大米","冰糖"], difficulty:"简单", time:30, taste:"甜口", nutrition:{calories:180,protein:4,carbs:38,fat:2,fiber:3,vitaminC:8} },
+      { name:"皮蛋瘦肉粥",type:"主食", ingredients:["大米","猪肉","皮蛋","姜","葱"], difficulty:"中等", time:40, taste:"清淡", nutrition:{calories:280,protein:16,carbs:36,fat:8,fiber:1,vitaminC:2} },
+      { name:"蒸水蛋",type:"蛋类", ingredients:["鸡蛋","温水","酱油","葱"], difficulty:"简单", time:12, taste:"清淡", nutrition:{calories:110,protein:10,carbs:2,fat:7,fiber:0,vitaminC:1} },
+      { name:"土豆泥",type:"西式", ingredients:["土豆","牛奶","黄油","盐"], difficulty:"简单", time:20, taste:"清淡", nutrition:{calories:180,protein:4,carbs:22,fat:9,fiber:2,vitaminC:15} },
+      { name:"糖拌番茄",type:"凉菜", ingredients:["番茄","糖"], difficulty:"简单", time:3, taste:"甜口", nutrition:{calories:80,protein:1,carbs:18,fat:0,fiber:2,vitaminC:30} },
+      { name:"烤红薯",type:"小吃", ingredients:["红薯"], difficulty:"简单", time:45, taste:"甜口", nutrition:{calories:200,protein:3,carbs:45,fat:1,fiber:5,vitaminC:25} },
+      { name:"蒸玉米",type:"小吃", ingredients:["玉米"], difficulty:"简单", time:20, taste:"甜口", nutrition:{calories:150,protein:5,carbs:30,fat:2,fiber:4,vitaminC:8} },
+      // 炒肉类补充
+      { name:"青椒牛肉",type:"肉菜", ingredients:["牛肉","青椒","蒜"], difficulty:"中等", time:20, taste:"微辣", nutrition:{calories:250,protein:25,carbs:5,fat:15,fiber:3,vitaminC:20} },
+      { name:"番茄牛腩",type:"肉菜", ingredients:["牛肉","番茄","土豆","葱"], difficulty:"中等", time:60, taste:"酸甜", nutrition:{calories:320,protein:28,carbs:20,fat:16,fiber:4,vitaminC:25} },
+      { name:"土豆炖牛肉",type:"肉菜", ingredients:["牛肉","土豆","葱","姜"], difficulty:"中等", time:45, taste:"咸鲜", nutrition:{calories:350,protein:26,carbs:25,fat:14,fiber:3,vitaminC:15} },
+      { name:"清蒸虾仁",type:"海鲜", ingredients:["虾仁","葱","姜"], difficulty:"简单", time:15, taste:"清淡", nutrition:{calories:120,protein:22,carbs:2,fat:2,fiber:0,vitaminC:5} },
+      { name:"虾仁炒蛋",type:"海鲜", ingredients:["虾仁","鸡蛋","葱"], difficulty:"简单", time:15, taste:"清淡", nutrition:{calories:200,protein:20,carbs:5,fat:12,fiber:0,vitaminC:5} },
+      { name:"蒜蓉青菜",type:"素菜", ingredients:["青菜","蒜"], difficulty:"简单", time:8, taste:"清淡", nutrition:{calories:60,protein:3,carbs:6,fat:3,fiber:4,vitaminC:25} },
+      { name:"青椒炒蛋",type:"蛋类", ingredients:["青椒","鸡蛋","蒜"], difficulty:"简单", time:10, taste:"微辣", nutrition:{calories:150,protein:11,carbs:6,fat:9,fiber:2,vitaminC:35} },
+      { name:"虾仁青菜",type:"海鲜", ingredients:["虾仁","青菜","蒜"], difficulty:"简单", time:12, taste:"清淡", nutrition:{calories:130,protein:20,carbs:4,fat:4,fiber:3,vitaminC:22} },
+      { name:"青椒土豆丝",type:"素菜", ingredients:["土豆","青椒","蒜"], difficulty:"简单", time:10, taste:"微辣", nutrition:{calories:150,protein:3,carbs:20,fat:6,fiber:4,vitaminC:30} },
+      { name:"番茄虾仁",type:"海鲜", ingredients:["番茄","虾仁","葱"], difficulty:"简单", time:15, taste:"酸甜", nutrition:{calories:160,protein:22,carbs:8,fat:5,fiber:2,vitaminC:32} },
+      { name:"红烧牛肉",type:"肉菜", ingredients:["牛肉","葱","姜"], difficulty:"中等", time:40, taste:"咸鲜", nutrition:{calories:300,protein:28,carbs:8,fat:18,fiber:1,vitaminC:5} },
+      { name:"土豆丝炒蛋",type:"蛋类", ingredients:["土豆","鸡蛋","青椒"], difficulty:"简单", time:15, taste:"微辣", nutrition:{calories:220,protein:12,carbs:22,fat:11,fiber:3,vitaminC:15} },
+      // 禽类扩展
+      { name:"口水鸡",type:"肉菜", ingredients:["鸡腿","辣椒油","花椒","芝麻","蒜","葱"], difficulty:"中等", time:35, taste:"麻辣", nutrition:{calories:320,protein:26,carbs:4,fat:22,fiber:1,vitaminC:3} },
+      { name:"黄焖鸡",type:"肉菜", ingredients:["鸡腿","香菇","土豆","青椒","姜","蒜"], difficulty:"中等", time:30, taste:"咸鲜", nutrition:{calories:350,protein:24,carbs:18,fat:20,fiber:3,vitaminC:18} },
+      { name:"柠檬鸡",type:"肉菜", ingredients:["鸡胸肉","柠檬","蜂蜜","蒜"], difficulty:"简单", time:20, taste:"酸甜", nutrition:{calories:220,protein:28,carbs:8,fat:8,fiber:0,vitaminC:15} },
+      { name:"咖喱鸡",type:"东南亚", ingredients:["鸡腿","土豆","胡萝卜","洋葱","咖喱粉"], difficulty:"中等", time:35, taste:"咸鲜", nutrition:{calories:380,protein:22,carbs:30,fat:20,fiber:4,vitaminC:12} },
+      { name:"啤酒鸡",type:"肉菜", ingredients:["鸡","啤酒","土豆","青椒","葱","姜"], difficulty:"中等", time:40, taste:"咸鲜", nutrition:{calories:400,protein:30,carbs:15,fat:24,fiber:2,vitaminC:15} },
+      { name:"照烧鸡腿",type:"日韩", ingredients:["鸡腿","酱油","蜂蜜","姜","蒜"], difficulty:"简单", time:25, taste:"甜口", nutrition:{calories:300,protein:26,carbs:14,fat:16,fiber:0,vitaminC:2} },
+      { name:"新疆大盘鸡",type:"肉菜", ingredients:["鸡","土豆","青椒","干辣椒","葱","姜","蒜"], difficulty:"中等", time:50, taste:"麻辣", nutrition:{calories:450,protein:32,carbs:28,fat:24,fiber:4,vitaminC:25} },
+      { name:"椒麻鸡",type:"肉菜", ingredients:["鸡腿","花椒","青椒","葱","姜"], difficulty:"中等", time:30, taste:"麻辣", nutrition:{calories:280,protein:25,carbs:5,fat:18,fiber:1,vitaminC:12} },
+      // 鸭肉类
+      { name:"啤酒鸭",type:"肉菜", ingredients:["鸭","啤酒","土豆","青椒","葱","姜","蒜","干辣椒"], difficulty:"中等", time:60, taste:"麻辣", nutrition:{calories:420,protein:28,carbs:14,fat:28,fiber:2,vitaminC:15} },
+      { name:"红烧鸭",type:"肉菜", ingredients:["鸭","葱","姜","蒜","八角","酱油"], difficulty:"中等", time:55, taste:"咸鲜", nutrition:{calories:400,protein:26,carbs:10,fat:30,fiber:1,vitaminC:3} },
+      // 牛羊肉
+      { name:"小炒黄牛肉",type:"肉菜", ingredients:["牛肉","芹菜","泡椒","蒜","姜"], difficulty:"中等", time:15, taste:"微辣", nutrition:{calories:260,protein:26,carbs:6,fat:14,fiber:2,vitaminC:15} },
+      { name:"牛排",type:"西式", ingredients:["牛肉","黄油","蒜","黑胡椒"], difficulty:"中等", time:12, taste:"咸鲜", nutrition:{calories:450,protein:38,carbs:2,fat:32,fiber:0,vitaminC:2} },
+      { name:"葱爆羊肉",type:"肉菜", ingredients:["羊肉","大葱","姜","蒜"], difficulty:"中等", time:12, taste:"微辣", nutrition:{calories:320,protein:24,carbs:8,fat:22,fiber:1,vitaminC:8} },
+      { name:"孜然羊肉",type:"肉菜", ingredients:["羊肉","孜然粉","辣椒粉","洋葱","香菜"], difficulty:"中等", time:15, taste:"麻辣", nutrition:{calories:350,protein:24,carbs:10,fat:24,fiber:2,vitaminC:10} },
+      { name:"羊肉汤",type:"汤", ingredients:["羊肉","白萝卜","姜","枸杞"], difficulty:"中等", time:90, taste:"清淡", nutrition:{calories:280,protein:22,carbs:8,fat:16,fiber:2,vitaminC:15} },
+      // 猪肉扩展
+      { name:"红烧排骨",type:"肉菜", ingredients:["排骨","酱油","糖","葱","姜","八角"], difficulty:"中等", time:50, taste:"咸鲜", nutrition:{calories:380,protein:18,carbs:8,fat:30,fiber:1,vitaminC:2} },
+      { name:"糖醋排骨",type:"肉菜", ingredients:["排骨","糖","醋","番茄酱","姜"], difficulty:"中等", time:35, taste:"酸甜", nutrition:{calories:400,protein:18,carbs:15,fat:30,fiber:1,vitaminC:5} },
+      { name:"粉蒸肉",type:"肉菜", ingredients:["五花肉","米粉","土豆","豆瓣酱","姜"], difficulty:"中等", time:45, taste:"咸鲜", nutrition:{calories:450,protein:14,carbs:25,fat:34,fiber:3,vitaminC:10} },
+      { name:"梅菜扣肉",type:"肉菜", ingredients:["五花肉","梅干菜","酱油","糖","姜"], difficulty:"困难", time:90, taste:"咸鲜", nutrition:{calories:480,protein:12,carbs:10,fat:40,fiber:2,vitaminC:2} },
+      { name:"京酱肉丝",type:"肉菜", ingredients:["猪肉","甜面酱","葱","黄瓜"], difficulty:"中等", time:18, taste:"咸鲜", nutrition:{calories:300,protein:18,carbs:12,fat:20,fiber:2,vitaminC:5} },
+      { name:"木须肉",type:"肉菜", ingredients:["猪肉","木耳","鸡蛋","黄瓜"], difficulty:"中等", time:15, taste:"咸鲜", nutrition:{calories:240,protein:16,carbs:8,fat:16,fiber:2,vitaminC:8} },
+      // 海鲜扩展
+      { name:"剁椒鱼头",type:"海鲜", ingredients:["鱼头","剁椒","姜","蒜","葱"], difficulty:"中等", time:30, taste:"麻辣", nutrition:{calories:280,protein:22,carbs:4,fat:18,fiber:1,vitaminC:10} },
+      { name:"红烧鲤鱼",type:"海鲜", ingredients:["鲤鱼","葱","姜","蒜","酱油"], difficulty:"中等", time:30, taste:"咸鲜", nutrition:{calories:300,protein:24,carbs:5,fat:20,fiber:0,vitaminC:2} },
+      { name:"蒜蓉开背虾",type:"海鲜", ingredients:["虾","蒜","粉丝","葱"], difficulty:"简单", time:15, taste:"清淡", nutrition:{calories:160,protein:20,carbs:8,fat:4,fiber:1,vitaminC:8} },
+      { name:"香辣蟹",type:"海鲜", ingredients:["螃蟹","干辣椒","花椒","姜","蒜"], difficulty:"中等", time:25, taste:"麻辣", nutrition:{calories:280,protein:20,carbs:4,fat:18,fiber:1,vitaminC:5} },
+      { name:"葱姜炒蟹",type:"海鲜", ingredients:["螃蟹","葱","姜","蒜"], difficulty:"中等", time:20, taste:"咸鲜", nutrition:{calories:260,protein:20,carbs:3,fat:18,fiber:0,vitaminC:3} },
+      { name:"油焖大虾",type:"海鲜", ingredients:["虾","番茄酱","葱","姜","蒜"], difficulty:"中等", time:15, taste:"酸甜", nutrition:{calories:240,protein:22,carbs:8,fat:14,fiber:1,vitaminC:8} },
+      { name:"椒盐鱿鱼",type:"海鲜", ingredients:["鱿鱼","椒盐","蒜","青椒"], difficulty:"简单", time:12, taste:"咸鲜", nutrition:{calories:200,protein:18,carbs:5,fat:12,fiber:1,vitaminC:10} },
+      { name:"柠香烤三文鱼",type:"海鲜", ingredients:["三文鱼","柠檬","迷迭香","蒜"], difficulty:"简单", time:20, taste:"清淡", nutrition:{calories:340,protein:30,carbs:3,fat:22,fiber:0,vitaminC:12} },
+      { name:"日式刺身",type:"日韩", ingredients:["三文鱼","酱油","芥末","柠檬"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:220,protein:26,carbs:2,fat:12,fiber:0,vitaminC:8} },
+      // 蔬菜扩展
+      { name:"酸辣土豆丝",type:"素菜", ingredients:["土豆","干辣椒","醋","蒜"], difficulty:"简单", time:10, taste:"酸甜", nutrition:{calories:130,protein:3,carbs:18,fat:5,fiber:2,vitaminC:18} },
+      { name:"红烧茄子",type:"素菜", ingredients:["茄子","蒜","酱油","糖"], difficulty:"中等", time:15, taste:"咸鲜", nutrition:{calories:160,protein:3,carbs:14,fat:10,fiber:3,vitaminC:8} },
+      { name:"咸蛋黄焗南瓜",type:"素菜", ingredients:["南瓜","咸蛋黄","蒜"], difficulty:"简单", time:12, taste:"咸鲜", nutrition:{calories:200,protein:5,carbs:20,fat:12,fiber:3,vitaminC:10} },
+      { name:"荷塘小炒",type:"素菜", ingredients:["莲藕","木耳","四季豆","胡萝卜"], difficulty:"简单", time:12, taste:"清淡", nutrition:{calories:110,protein:4,carbs:14,fat:5,fiber:4,vitaminC:18} },
+      { name:"上汤娃娃菜",type:"素菜", ingredients:["娃娃菜","皮蛋","火腿","蒜"], difficulty:"中等", time:15, taste:"清淡", nutrition:{calories:120,protein:8,carbs:8,fat:6,fiber:2,vitaminC:15} },
+      { name:"松仁玉米",type:"素菜", ingredients:["玉米","松仁","胡萝卜","黄瓜"], difficulty:"简单", time:10, taste:"甜口", nutrition:{calories:180,protein:5,carbs:22,fat:9,fiber:3,vitaminC:10} },
+      { name:"凉拌木耳",type:"凉菜", ingredients:["木耳","蒜","醋","辣椒油"], difficulty:"简单", time:8, taste:"微辣", nutrition:{calories:70,protein:2,carbs:8,fat:4,fiber:3,vitaminC:2} },
+      { name:"拍黄瓜",type:"凉菜", ingredients:["黄瓜","蒜","醋","辣椒油"], difficulty:"简单", time:5, taste:"微辣", nutrition:{calories:50,protein:1,carbs:6,fat:3,fiber:2,vitaminC:8} },
+      { name:"蒜蓉粉丝蒸娃娃菜",type:"素菜", ingredients:["娃娃菜","粉丝","蒜"], difficulty:"简单", time:12, taste:"清淡", nutrition:{calories:100,protein:3,carbs:14,fat:4,fiber:2,vitaminC:18} },
+      { name:"清炒西兰花",type:"素菜", ingredients:["西兰花","蒜"], difficulty:"简单", time:8, taste:"清淡", nutrition:{calories:65,protein:4,carbs:7,fat:3,fiber:3,vitaminC:55} },
+      { name:"扒油菜",type:"素菜", ingredients:["青菜","蒜"], difficulty:"简单", time:6, taste:"清淡", nutrition:{calories:55,protein:3,carbs:5,fat:3,fiber:3,vitaminC:22} },
+      { name:"苦瓜炒蛋",type:"素菜", ingredients:["苦瓜","鸡蛋","蒜"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:140,protein:10,carbs:6,fat:8,fiber:2,vitaminC:30} },
+      // 豆腐扩展
+      { name:"锅塌豆腐",type:"豆制品", ingredients:["豆腐","鸡蛋","面粉","葱"], difficulty:"中等", time:15, taste:"咸鲜", nutrition:{calories:200,protein:14,carbs:14,fat:10,fiber:1,vitaminC:2} },
+      { name:"香煎豆腐",type:"豆制品", ingredients:["豆腐","葱","蒜","辣椒"], difficulty:"简单", time:12, taste:"微辣", nutrition:{calories:170,protein:14,carbs:5,fat:10,fiber:1,vitaminC:5} },
+      { name:"鱼头豆腐汤",type:"汤", ingredients:["鱼头","豆腐","姜","葱"], difficulty:"中等", time:35, taste:"清淡", nutrition:{calories:220,protein:24,carbs:6,fat:12,fiber:1,vitaminC:3} },
+      { name:"蟹黄豆腐",type:"豆制品", ingredients:["豆腐","咸蛋黄","虾仁","葱","姜"], difficulty:"中等", time:15, taste:"咸鲜", nutrition:{calories:200,protein:18,carbs:6,fat:12,fiber:1,vitaminC:3} },
+      // 汤类扩展
+      { name:"排骨莲藕汤",type:"汤", ingredients:["排骨","莲藕","姜","枸杞"], difficulty:"中等", time:80, taste:"清淡", nutrition:{calories:280,protein:18,carbs:14,fat:16,fiber:3,vitaminC:15} },
+      { name:"山药排骨汤",type:"汤", ingredients:["排骨","山药","姜","枸杞"], difficulty:"中等", time:70, taste:"清淡", nutrition:{calories:270,protein:18,carbs:12,fat:16,fiber:2,vitaminC:8} },
+      { name:"豆腐海带汤",type:"汤", ingredients:["豆腐","海带","葱","姜"], difficulty:"简单", time:15, taste:"清淡", nutrition:{calories:90,protein:10,carbs:8,fat:3,fiber:2,vitaminC:5} },
+      { name:"银耳汤",type:"汤", ingredients:["银耳","冰糖","枸杞","红枣"], difficulty:"简单", time:40, taste:"甜口", nutrition:{calories:120,protein:2,carbs:28,fat:1,fiber:3,vitaminC:3} },
+      { name:"罗宋汤",type:"西式", ingredients:["牛肉","番茄","胡萝卜","土豆","洋葱"], difficulty:"中等", time:50, taste:"酸甜", nutrition:{calories:250,protein:18,carbs:20,fat:14,fiber:4,vitaminC:25} },
+      { name:"蛤蜊冬瓜汤",type:"汤", ingredients:["蛤蜊","冬瓜","姜","葱"], difficulty:"简单", time:15, taste:"清淡", nutrition:{calories:100,protein:12,carbs:6,fat:3,fiber:1,vitaminC:8} },
+      { name:"皮蛋黄瓜汤",type:"汤", ingredients:["皮蛋","黄瓜","姜","葱"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:110,protein:8,carbs:4,fat:6,fiber:1,vitaminC:6} },
+      // 主食扩展
+      { name:"煲仔饭",type:"主食", ingredients:["米饭","腊肠","青菜","鸡蛋"], difficulty:"中等", time:30, taste:"咸鲜", nutrition:{calories:480,protein:22,carbs:55,fat:20,fiber:3,vitaminC:8} },
+      { name:"菠萝炒饭",type:"主食", ingredients:["米饭","菠萝","虾仁","鸡蛋","青豆"], difficulty:"中等", time:15, taste:"酸甜", nutrition:{calories:420,protein:18,carbs:50,fat:18,fiber:4,vitaminC:25} },
+      { name:"炒河粉",type:"主食", ingredients:["河粉","牛肉","豆芽","葱"], difficulty:"中等", time:12, taste:"咸鲜", nutrition:{calories:420,protein:22,carbs:48,fat:18,fiber:2,vitaminC:5} },
+      { name:"凉面",type:"主食", ingredients:["面条","黄瓜","芝麻酱","蒜"], difficulty:"简单", time:15, taste:"微辣", nutrition:{calories:380,protein:14,carbs:50,fat:16,fiber:3,vitaminC:5} },
+      { name:"炒乌冬面",type:"日韩", ingredients:["乌冬面","猪肉","青椒","洋葱"], difficulty:"简单", time:12, taste:"咸鲜", nutrition:{calories:400,protein:16,carbs:50,fat:18,fiber:3,vitaminC:10} },
+      { name:"焗意大利面",type:"西式", ingredients:["意大利面","芝士","番茄","猪肉"], difficulty:"中等", time:25, taste:"咸鲜", nutrition:{calories:500,protein:22,carbs:48,fat:26,fiber:3,vitaminC:8} },
+      { name:"韩式拌饭",type:"日韩", ingredients:["米饭","鸡蛋","牛肉","胡萝卜","豆芽","菠菜"], difficulty:"中等", time:25, taste:"微辣", nutrition:{calories:450,protein:24,carbs:48,fat:18,fiber:4,vitaminC:18} },
+      { name:"重庆小面",type:"主食", ingredients:["面条","猪肉","花生","榨菜","辣椒油"], difficulty:"中等", time:20, taste:"麻辣", nutrition:{calories:420,protein:18,carbs:48,fat:20,fiber:3,vitaminC:5} },
+      { name:"日式亲子丼",type:"日韩", ingredients:["米饭","鸡腿","鸡蛋","洋葱","酱油"], difficulty:"简单", time:15, taste:"咸鲜", nutrition:{calories:430,protein:28,carbs:42,fat:16,fiber:2,vitaminC:5} },
+      { name:"川味担担面",type:"主食", ingredients:["面条","猪肉","花生","芝麻酱","辣椒油"], difficulty:"中等", time:18, taste:"麻辣", nutrition:{calories:440,protein:22,carbs:46,fat:22,fiber:3,vitaminC:3} },
+      // 西式/创意料理
+      { name:"法式吐司",type:"西式", ingredients:["吐司","鸡蛋","牛奶","黄油"], difficulty:"简单", time:10, taste:"甜口", nutrition:{calories:350,protein:14,carbs:35,fat:18,fiber:1,vitaminC:1} },
+      { name:"凯撒沙拉",type:"西式", ingredients:["生菜","培根","面包丁","奶酪","鸡蛋"], difficulty:"简单", time:15, taste:"清淡", nutrition:{calories:320,protein:18,carbs:20,fat:20,fiber:3,vitaminC:12} },
+      { name:"意式蔬菜汤",type:"西式", ingredients:["番茄","胡萝卜","土豆","洋葱","意大利面","芹菜"], difficulty:"简单", time:30, taste:"酸甜", nutrition:{calories:180,protein:6,carbs:28,fat:6,fiber:5,vitaminC:30} },
+      { name:"芝士焗红薯",type:"西式", ingredients:["红薯","芝士","黄油"], difficulty:"简单", time:25, taste:"甜口", nutrition:{calories:280,protein:6,carbs:40,fat:12,fiber:4,vitaminC:18} },
+      { name:"西班牙海鲜饭",type:"西式", ingredients:["米饭","虾","蛤蜊","鱿鱼","番茄","洋葱"], difficulty:"困难", time:45, taste:"咸鲜", nutrition:{calories:480,protein:28,carbs:50,fat:18,fiber:4,vitaminC:18} },
+      { name:"奶油蘑菇浓汤",type:"西式", ingredients:["蘑菇","奶油","洋葱","黄油"], difficulty:"简单", time:20, taste:"清淡", nutrition:{calories:220,protein:5,carbs:12,fat:18,fiber:2,vitaminC:3} },
+      { name:"披萨吐司",type:"西式", ingredients:["吐司","芝士","番茄","青椒","培根"], difficulty:"简单", time:15, taste:"咸鲜", nutrition:{calories:380,protein:18,carbs:28,fat:22,fiber:2,vitaminC:12} },
+      // 小食/点心
+      { name:"炸鸡柳",type:"小吃", ingredients:["鸡胸肉","面包糠","鸡蛋"], difficulty:"中等", time:20, taste:"咸鲜", nutrition:{calories:350,protein:26,carbs:18,fat:20,fiber:1,vitaminC:2} },
+      { name:"椒盐玉米",type:"小吃", ingredients:["玉米","椒盐","淀粉"], difficulty:"简单", time:10, taste:"咸鲜", nutrition:{calories:180,protein:5,carbs:25,fat:8,fiber:3,vitaminC:8} },
+      { name:"炸藕盒",type:"小吃", ingredients:["莲藕","猪肉","鸡蛋","面粉"], difficulty:"中等", time:25, taste:"咸鲜", nutrition:{calories:320,protein:15,carbs:20,fat:20,fiber:3,vitaminC:10} },
+      { name:"韭菜盒子",type:"小吃", ingredients:["韭菜","鸡蛋","面粉","虾皮"], difficulty:"中等", time:30, taste:"咸鲜", nutrition:{calories:280,protein:12,carbs:22,fat:16,fiber:3,vitaminC:8} },
+      { name:"春卷",type:"小吃", ingredients:["春卷皮","猪肉","豆芽","胡萝卜","木耳"], difficulty:"中等", time:25, taste:"咸鲜", nutrition:{calories:250,protein:12,carbs:18,fat:16,fiber:2,vitaminC:10} },
+      { name:"拔丝红薯",type:"饮料甜品", ingredients:["红薯","糖"], difficulty:"中等", time:20, taste:"甜口", nutrition:{calories:280,protein:2,carbs:48,fat:6,fiber:3,vitaminC:15} },
+      { name:"煎饼果子",type:"小吃", ingredients:["面粉","鸡蛋","生菜","火腿","葱"], difficulty:"中等", time:15, taste:"咸鲜", nutrition:{calories:380,protein:16,carbs:38,fat:18,fiber:2,vitaminC:5} },
+      // 蛋类扩展
+      { name:"鸡蛋灌饼",type:"小吃", ingredients:["面粉","鸡蛋","生菜","葱"], difficulty:"中等", time:20, taste:"咸鲜", nutrition:{calories:350,protein:14,carbs:35,fat:18,fiber:2,vitaminC:3} },
+      { name:"茶叶蛋",type:"蛋类", ingredients:["鸡蛋","茶叶","八角","酱油"], difficulty:"简单", time:30, taste:"咸鲜", nutrition:{calories:90,protein:8,carbs:2,fat:6,fiber:0,vitaminC:1} },
+      { name:"鸡蛋羹",type:"蛋类", ingredients:["鸡蛋","温水","酱油","葱","虾皮"], difficulty:"简单", time:12, taste:"清淡", nutrition:{calories:120,protein:12,carbs:3,fat:7,fiber:0,vitaminC:1} },
+      { name:"蛋饺",type:"蛋类", ingredients:["鸡蛋","猪肉","葱","姜"], difficulty:"中等", time:30, taste:"咸鲜", nutrition:{calories:250,protein:20,carbs:4,fat:18,fiber:0,vitaminC:2} },
+      // 快手菜扩展
+      { name:"洋葱炒肉",type:"肉菜", ingredients:["洋葱","猪肉","姜"], difficulty:"简单", time:10, taste:"咸鲜", nutrition:{calories:260,protein:16,carbs:10,fat:18,fiber:2,vitaminC:8} },
+      { name:"蒜薹炒肉",type:"肉菜", ingredients:["猪肉","蒜苗","姜","蒜"], difficulty:"简单", time:12, taste:"咸鲜", nutrition:{calories:240,protein:14,carbs:10,fat:16,fiber:2,vitaminC:10} },
+      { name:"肉末豆角",type:"肉菜", ingredients:["四季豆","猪肉","干辣椒","蒜"], difficulty:"中等", time:15, taste:"微辣", nutrition:{calories:200,protein:14,carbs:10,fat:12,fiber:3,vitaminC:15} },
+      { name:"蚝油牛肉",type:"肉菜", ingredients:["牛肉","青椒","洋葱","蚝油"], difficulty:"中等", time:15, taste:"咸鲜", nutrition:{calories:270,protein:24,carbs:10,fat:16,fiber:2,vitaminC:20} },
+      { name:"腐竹炒肉",type:"肉菜", ingredients:["腐竹","猪肉","青椒","蒜","姜"], difficulty:"中等", time:15, taste:"咸鲜", nutrition:{calories:280,protein:20,carbs:12,fat:18,fiber:3,vitaminC:12} },
+      { name:"土豆烧牛腩",type:"肉菜", ingredients:["牛肉","土豆","胡萝卜","姜","蒜"], difficulty:"中等", time:50, taste:"咸鲜", nutrition:{calories:380,protein:28,carbs:28,fat:18,fiber:4,vitaminC:15} },
+      { name:"玉米虾仁",type:"海鲜", ingredients:["虾仁","玉米","胡萝卜","蒜"], difficulty:"简单", time:12, taste:"清淡", nutrition:{calories:180,protein:22,carbs:15,fat:5,fiber:3,vitaminC:12} },
+      // 更多创意牛油果料理
+      { name:"牛油果鸡蛋沙拉",type:"轻食沙拉", ingredients:["牛油果","鸡蛋","番茄","柠檬"], difficulty:"简单", time:8, taste:"清淡", nutrition:{calories:300,protein:12,carbs:14,fat:22,fiber:7,vitaminC:22} },
+      { name:"牛油果三文鱼卷",type:"日韩", ingredients:["牛油果","三文鱼","黄瓜","紫菜","酱油"], difficulty:"中等", time:20, taste:"清淡", nutrition:{calories:320,protein:24,carbs:10,fat:22,fiber:5,vitaminC:10} },
+      { name:"牛油果意面",type:"西式", ingredients:["意大利面","牛油果","蒜","柠檬","橄榄油"], difficulty:"简单", time:18, taste:"清淡", nutrition:{calories:440,protein:16,carbs:50,fat:22,fiber:6,vitaminC:10} },
+      { name:"牛油果鸡肉卷",type:"轻食沙拉", ingredients:["鸡胸肉","牛油果","生菜","番茄","洋葱"], difficulty:"简单", time:18, taste:"清淡", nutrition:{calories:380,protein:30,carbs:14,fat:22,fiber:6,vitaminC:18} },
+      // 更多三文鱼料理
+      { name:"三文鱼寿司",type:"日韩", ingredients:["三文鱼","米饭","紫菜","黄瓜","醋","酱油"], difficulty:"中等", time:35, taste:"清淡", nutrition:{calories:350,protein:22,carbs:38,fat:14,fiber:2,vitaminC:5} },
+      { name:"烟熏三文鱼沙拉",type:"轻食沙拉", ingredients:["三文鱼","生菜","樱桃番茄","牛油果","柠檬"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:340,protein:26,carbs:10,fat:22,fiber:5,vitaminC:25} },
+      { name:"三文鱼味噌汤",type:"日韩", ingredients:["三文鱼","豆腐","海带","味噌","葱"], difficulty:"简单", time:15, taste:"清淡", nutrition:{calories:180,protein:22,carbs:6,fat:8,fiber:1,vitaminC:3} },
+      // 素菜扩展
+      { name:"素炒三丝",type:"素菜", ingredients:["土豆","胡萝卜","青椒","蒜"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:120,protein:3,carbs:18,fat:4,fiber:4,vitaminC:25} },
+      { name:"清炒茼蒿",type:"素菜", ingredients:["青菜","蒜"], difficulty:"简单", time:5, taste:"清淡", nutrition:{calories:50,protein:3,carbs:4,fat:3,fiber:3,vitaminC:20} },
+      { name:"素烧茄子",type:"素菜", ingredients:["茄子","番茄","青椒","蒜"], difficulty:"中等", time:15, taste:"酸甜", nutrition:{calories:140,protein:3,carbs:16,fat:8,fiber:4,vitaminC:25} },
+      { name:"干锅花菜",type:"素菜", ingredients:["花菜","五花肉","干辣椒","蒜","姜"], difficulty:"中等", time:15, taste:"麻辣", nutrition:{calories:200,protein:10,carbs:10,fat:14,fiber:4,vitaminC:45} },
+      { name:"香菇油菜",type:"素菜", ingredients:["青菜","香菇","蒜"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:80,protein:4,carbs:8,fat:4,fiber:3,vitaminC:22} },
+      // 湘菜系列
+      { name:"剁椒鱼块",type:"海鲜", ingredients:["草鱼","剁椒","姜","蒜","葱"], difficulty:"中等", time:25, taste:"麻辣", nutrition:{calories:240,protein:22,carbs:5,fat:14,fiber:1,vitaminC:12} },
+      { name:"小炒肉",type:"肉菜", ingredients:["五花肉","青椒","豆豉","蒜","姜"], difficulty:"中等", time:15, taste:"微辣", nutrition:{calories:380,protein:14,carbs:8,fat:32,fiber:2,vitaminC:18} },
+      { name:"酸豆角炒肉",type:"肉菜", ingredients:["猪肉","酸豆角","蒜","姜","干辣椒"], difficulty:"中等", time:15, taste:"微辣", nutrition:{calories:260,protein:16,carbs:8,fat:18,fiber:2,vitaminC:8} },
+      { name:"剁椒蒸排骨",type:"肉菜", ingredients:["排骨","剁椒","姜","蒜"], difficulty:"中等", time:40, taste:"麻辣", nutrition:{calories:360,protein:18,carbs:5,fat:30,fiber:1,vitaminC:5} },
+      // 粤菜系列
+      { name:"白切鸡",type:"凉菜", ingredients:["鸡","姜","葱"], difficulty:"中等", time:40, taste:"清淡", nutrition:{calories:340,protein:30,carbs:2,fat:24,fiber:0,vitaminC:2} },
+      { name:"豉汁蒸排骨",type:"肉菜", ingredients:["排骨","豆豉","蒜","姜"], difficulty:"中等", time:35, taste:"咸鲜", nutrition:{calories:320,protein:18,carbs:4,fat:26,fiber:1,vitaminC:2} },
+      { name:"清蒸石斑鱼",type:"海鲜", ingredients:["鱼","葱","姜","酱油"], difficulty:"中等", time:18, taste:"清淡", nutrition:{calories:160,protein:26,carbs:2,fat:5,fiber:0,vitaminC:2} },
+      { name:"白灼芥蓝",type:"素菜", ingredients:["青菜","蚝油","蒜"], difficulty:"简单", time:5, taste:"清淡", nutrition:{calories:50,protein:3,carbs:5,fat:2,fiber:2,vitaminC:20} },
+      { name:"虾饺",type:"小吃", ingredients:["虾仁","淀粉","猪肉","姜"], difficulty:"困难", time:40, taste:"清淡", nutrition:{calories:200,protein:18,carbs:16,fat:8,fiber:1,vitaminC:2} },
+      // 川菜系列
+      { name:"夫妻肺片",type:"肉菜", ingredients:["牛肉","辣椒油","花椒","芝麻","芹菜"], difficulty:"中等", time:30, taste:"麻辣", nutrition:{calories:280,protein:24,carbs:3,fat:20,fiber:1,vitaminC:5} },
+      { name:"毛血旺",type:"肉菜", ingredients:["鸭血","午餐肉","豆芽","干辣椒","花椒"], difficulty:"中等", time:25, taste:"麻辣", nutrition:{calories:350,protein:20,carbs:8,fat:26,fiber:2,vitaminC:10} },
+      { name:"蚂蚁上树",type:"肉菜", ingredients:["粉条","猪肉","豆瓣酱","蒜","姜"], difficulty:"中等", time:15, taste:"微辣", nutrition:{calories:280,protein:12,carbs:30,fat:14,fiber:2,vitaminC:3} },
+      // 鲁菜系列
+      { name:"葱烧海参",type:"海鲜", ingredients:["海参","葱","姜","酱油"], difficulty:"困难", time:40, taste:"咸鲜", nutrition:{calories:180,protein:18,carbs:8,fat:8,fiber:1,vitaminC:3} },
+      { name:"油焖笋",type:"素菜", ingredients:["竹笋","青椒","酱油","糖"], difficulty:"中等", time:18, taste:"咸鲜", nutrition:{calories:120,protein:4,carbs:12,fat:6,fiber:4,vitaminC:10} },
+      { name:"九转大肠",type:"肉菜", ingredients:["大肠","酱油","糖","醋","姜"], difficulty:"困难", time:60, taste:"酸甜", nutrition:{calories:420,protein:16,carbs:6,fat:36,fiber:0,vitaminC:2} },
+      // 苏浙菜
+      { name:"糖醋鱼",type:"海鲜", ingredients:["草鱼","糖","醋","番茄酱","姜","葱"], difficulty:"中等", time:25, taste:"酸甜", nutrition:{calories:320,protein:22,carbs:15,fat:18,fiber:1,vitaminC:8} },
+      { name:"龙井虾仁",type:"海鲜", ingredients:["虾仁","龙井茶","葱","姜"], difficulty:"中等", time:12, taste:"清淡", nutrition:{calories:130,protein:24,carbs:3,fat:3,fiber:0,vitaminC:3} },
+      { name:"西湖醋鱼",type:"海鲜", ingredients:["鲤鱼","醋","糖","姜","葱"], difficulty:"中等", time:20, taste:"酸甜", nutrition:{calories:220,protein:20,carbs:6,fat:12,fiber:0,vitaminC:5} },
+      { name:"无锡排骨",type:"肉菜", ingredients:["排骨","酱油","糖","八角","姜"], difficulty:"中等", time:60, taste:"甜口", nutrition:{calories:400,protein:18,carbs:12,fat:32,fiber:1,vitaminC:2} },
+      // 更多海鲜
+      { name:"葱油蛏子",type:"海鲜", ingredients:["蛏子","葱","姜","酱油"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:140,protein:18,carbs:4,fat:5,fiber:0,vitaminC:2} },
+      { name:"辣炒蛏子",type:"海鲜", ingredients:["蛏子","干辣椒","花椒","蒜","姜"], difficulty:"简单", time:10, taste:"麻辣", nutrition:{calories:160,protein:18,carbs:5,fat:8,fiber:1,vitaminC:5} },
+      { name:"黑椒虾仁",type:"海鲜", ingredients:["虾仁","黑胡椒","蒜","洋葱"], difficulty:"简单", time:10, taste:"咸鲜", nutrition:{calories:170,protein:22,carbs:6,fat:6,fiber:1,vitaminC:8} },
+      { name:"糖醋带鱼",type:"海鲜", ingredients:["带鱼","糖","醋","番茄酱","葱","姜"], difficulty:"中等", time:22, taste:"酸甜", nutrition:{calories:280,protein:20,carbs:10,fat:18,fiber:0,vitaminC:5} },
+      { name:"干烧黄鱼",type:"海鲜", ingredients:["鱼","猪肉末","蒜","豆瓣酱","葱"], difficulty:"中等", time:28, taste:"微辣", nutrition:{calories:300,protein:24,carbs:6,fat:20,fiber:1,vitaminC:5} },
+      { name:"蛋黄焗明虾",type:"海鲜", ingredients:["虾","咸蛋黄","蒜"], difficulty:"中等", time:18, taste:"咸鲜", nutrition:{calories:260,protein:22,carbs:6,fat:18,fiber:0,vitaminC:3} },
+      // 更多蔬菜
+      { name:"孜然圆白菜",type:"素菜", ingredients:["大白菜","孜然粉","干辣椒","蒜"], difficulty:"简单", time:8, taste:"微辣", nutrition:{calories:80,protein:3,carbs:8,fat:5,fiber:3,vitaminC:22} },
+      { name:"蒜蓉空心菜",type:"素菜", ingredients:["青菜","蒜"], difficulty:"简单", time:6, taste:"清淡", nutrition:{calories:55,protein:3,carbs:4,fat:3,fiber:2,vitaminC:18} },
+      { name:"西芹炒腰果",type:"素菜", ingredients:["芹菜","腰果","蒜"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:180,protein:5,carbs:12,fat:14,fiber:3,vitaminC:10} },
+      { name:"炒红薯叶",type:"素菜", ingredients:["青菜","蒜"], difficulty:"简单", time:5, taste:"清淡", nutrition:{calories:50,protein:3,carbs:5,fat:2,fiber:2,vitaminC:25} },
+      { name:"蚝油杏鲍菇",type:"素菜", ingredients:["杏鲍菇","蒜","蚝油"], difficulty:"简单", time:10, taste:"咸鲜", nutrition:{calories:80,protein:3,carbs:8,fat:4,fiber:2,vitaminC:3} },
+      // 更多汤品
+      { name:"冬瓜丸子汤",type:"汤", ingredients:["猪肉","冬瓜","姜","葱"], difficulty:"简单", time:20, taste:"清淡", nutrition:{calories:180,protein:16,carbs:6,fat:10,fiber:2,vitaminC:10} },
+      { name:"青菜丸子汤",type:"汤", ingredients:["猪肉","青菜","姜"], difficulty:"简单", time:15, taste:"清淡", nutrition:{calories:160,protein:16,carbs:5,fat:9,fiber:2,vitaminC:15} },
+      { name:"红枣银耳羹",type:"汤", ingredients:["银耳","红枣","冰糖","枸杞"], difficulty:"简单", time:60, taste:"甜口", nutrition:{calories:150,protein:3,carbs:34,fat:1,fiber:2,vitaminC:3} },
+      { name:"番茄牛肉汤",type:"汤", ingredients:["牛肉","番茄","土豆","姜"], difficulty:"中等", time:50, taste:"酸甜", nutrition:{calories:280,protein:26,carbs:18,fat:12,fiber:3,vitaminC:22} },
+      { name:"清炖鸡汤",type:"汤", ingredients:["鸡","姜","枸杞","红枣"], difficulty:"中等", time:90, taste:"清淡", nutrition:{calories:320,protein:32,carbs:5,fat:20,fiber:1,vitaminC:3} },
+      { name:"菌菇鸡汤",type:"汤", ingredients:["鸡","蘑菇","金针菇","姜","枸杞"], difficulty:"中等", time:80, taste:"清淡", nutrition:{calories:300,protein:30,carbs:8,fat:18,fiber:3,vitaminC:5} },
+      // 更多面食
+      { name:"油泼面",type:"主食", ingredients:["面条","青菜","蒜","辣椒粉","葱"], difficulty:"简单", time:15, taste:"微辣", nutrition:{calories:420,protein:14,carbs:55,fat:18,fiber:3,vitaminC:8} },
+      { name:"阳春面",type:"主食", ingredients:["面条","葱","酱油","猪油"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:320,protein:10,carbs:45,fat:12,fiber:1,vitaminC:2} },
+      { name:"热干面",type:"主食", ingredients:["面条","芝麻酱","榨菜","葱","萝卜干"], difficulty:"简单", time:15, taste:"咸鲜", nutrition:{calories:400,protein:14,carbs:50,fat:18,fiber:3,vitaminC:3} },
+      { name:"葱油拌面",type:"主食", ingredients:["面条","葱","酱油"], difficulty:"简单", time:12, taste:"咸鲜", nutrition:{calories:360,protein:12,carbs:48,fat:16,fiber:1,vitaminC:2} },
+      { name:"西红柿鸡蛋面",type:"主食", ingredients:["面条","番茄","鸡蛋","葱"], difficulty:"简单", time:15, taste:"酸甜", nutrition:{calories:400,protein:16,carbs:52,fat:16,fiber:3,vitaminC:18} },
+      // 饭类扩展
+      { name:"咖喱鸡肉饭",type:"东南亚", ingredients:["米饭","鸡腿","土豆","胡萝卜","洋葱","咖喱粉"], difficulty:"中等", time:35, taste:"咸鲜", nutrition:{calories:480,protein:24,carbs:52,fat:20,fiber:4,vitaminC:12} },
+      { name:"卤肉饭",type:"主食", ingredients:["米饭","五花肉","洋葱","鸡蛋","八角"], difficulty:"中等", time:45, taste:"咸鲜", nutrition:{calories:520,protein:18,carbs:48,fat:28,fiber:2,vitaminC:3} },
+      { name:"照烧鸡腿饭",type:"日韩", ingredients:["米饭","鸡腿","西兰花","蜂蜜","酱油"], difficulty:"中等", time:30, taste:"甜口", nutrition:{calories:480,protein:28,carbs:50,fat:18,fiber:3,vitaminC:30} },
+      { name:"红烧牛肉饭",type:"主食", ingredients:["米饭","牛肉","胡萝卜","土豆","葱","姜"], difficulty:"中等", time:45, taste:"咸鲜", nutrition:{calories:500,protein:30,carbs:48,fat:20,fiber:4,vitaminC:12} },
+      // 砂锅/煲类
+      { name:"砂锅豆腐",type:"砂锅煲", ingredients:["豆腐","白菜","粉条","火腿","葱","姜"], difficulty:"中等", time:25, taste:"清淡", nutrition:{calories:200,protein:14,carbs:18,fat:8,fiber:3,vitaminC:10} },
+      { name:"排骨炖豆角",type:"肉菜", ingredients:["排骨","四季豆","土豆","姜","蒜"], difficulty:"中等", time:45, taste:"咸鲜", nutrition:{calories:380,protein:22,carbs:22,fat:24,fiber:4,vitaminC:18} },
+      { name:"鸡公煲",type:"砂锅煲", ingredients:["鸡","土豆","青椒","洋葱","干辣椒","花椒"], difficulty:"中等", time:40, taste:"麻辣", nutrition:{calories:420,protein:28,carbs:18,fat:26,fiber:3,vitaminC:20} },
+      // 凉菜/小吃扩展
+      { name:"凉拌海带丝",type:"凉菜", ingredients:["海带","蒜","醋","辣椒油"], difficulty:"简单", time:8, taste:"微辣", nutrition:{calories:60,protein:2,carbs:8,fat:3,fiber:3,vitaminC:2} },
+      { name:"蒜泥白肉",type:"凉菜", ingredients:["五花肉","蒜","辣椒油","酱油"], difficulty:"中等", time:30, taste:"微辣", nutrition:{calories:380,protein:14,carbs:3,fat:34,fiber:0,vitaminC:2} },
+      { name:"卤牛肉",type:"凉菜", ingredients:["牛肉","八角","桂皮","酱油","姜"], difficulty:"中等", time:90, taste:"五香", nutrition:{calories:280,protein:32,carbs:3,fat:16,fiber:1,vitaminC:1} },
+      { name:"泡椒凤爪",type:"小吃", ingredients:["鸡爪","泡椒","姜","蒜"], difficulty:"中等", time:60, taste:"麻辣", nutrition:{calories:200,protein:18,carbs:4,fat:12,fiber:1,vitaminC:3} },
+      { name:"酱牛肉",type:"凉菜", ingredients:["牛肉","酱油","八角","桂皮","姜","葱"], difficulty:"中等", time:120, taste:"咸鲜", nutrition:{calories:290,protein:32,carbs:4,fat:16,fiber:1,vitaminC:2} },
+      // 蛋类扩展
+      { name:"蛋包饭",type:"蛋类", ingredients:["鸡蛋","米饭","火腿","青豆","番茄"], difficulty:"中等", time:18, taste:"咸鲜", nutrition:{calories:420,protein:16,carbs:48,fat:18,fiber:2,vitaminC:10} },
+      { name:"赛螃蟹",type:"蛋类", ingredients:["鸡蛋","姜","醋"], difficulty:"简单", time:10, taste:"酸甜", nutrition:{calories:170,protein:12,carbs:3,fat:12,fiber:0,vitaminC:1} },
+      { name:"滑蛋牛肉",type:"肉菜", ingredients:["鸡蛋","牛肉","葱"], difficulty:"中等", time:12, taste:"咸鲜", nutrition:{calories:280,protein:28,carbs:4,fat:18,fiber:0,vitaminC:2} },
+      { name:"虾仁滑蛋",type:"海鲜", ingredients:["鸡蛋","虾仁","葱"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:210,protein:22,carbs:4,fat:12,fiber:0,vitaminC:3} },
+      // 夜宵/重口味
+      { name:"麻辣香锅",type:"肉菜", ingredients:["虾","牛肉","藕","土豆","青椒","干辣椒","花椒"], difficulty:"中等", time:25, taste:"麻辣", nutrition:{calories:450,protein:30,carbs:20,fat:28,fiber:5,vitaminC:25} },
+      { name:"冒菜",type:"肉菜", ingredients:["牛肉","土豆","豆芽","藕","干辣椒","花椒"], difficulty:"中等", time:20, taste:"麻辣", nutrition:{calories:380,protein:24,carbs:18,fat:24,fiber:4,vitaminC:20} },
+      { name:"钵钵鸡",type:"肉菜", ingredients:["鸡","土豆","藕","干辣椒","花椒","芝麻"], difficulty:"中等", time:35, taste:"麻辣", nutrition:{calories:360,protein:26,carbs:14,fat:22,fiber:3,vitaminC:15} },
+      // 健康低卡
+      { name:"藜麦沙拉",type:"轻食沙拉", ingredients:["藜麦","牛油果","樱桃番茄","黄瓜","柠檬"], difficulty:"简单", time:20, taste:"清淡", nutrition:{calories:320,protein:10,carbs:32,fat:18,fiber:8,vitaminC:25} },
+      { name:"金枪鱼沙拉",type:"轻食沙拉", ingredients:["金枪鱼","生菜","玉米","黄瓜","柠檬"], difficulty:"简单", time:10, taste:"清淡", nutrition:{calories:250,protein:22,carbs:15,fat:12,fiber:4,vitaminC:18} },
+      { name:"燕麦水果粥",type:"主食", ingredients:["燕麦","牛奶","苹果","香蕉","蜂蜜"], difficulty:"简单", time:15, taste:"甜口", nutrition:{calories:280,protein:8,carbs:45,fat:8,fiber:6,vitaminC:10} },
+      { name:"蔬菜鸡肉卷",type:"轻食沙拉", ingredients:["鸡胸肉","生菜","黄瓜","胡萝卜","鸡蛋"], difficulty:"简单", time:18, taste:"清淡", nutrition:{calories:260,protein:28,carbs:10,fat:12,fiber:4,vitaminC:18} },
+      // 更多豆腐
+      { name:"酿豆腐",type:"豆制品", ingredients:["豆腐","猪肉","香菇","葱","姜"], difficulty:"中等", time:30, taste:"咸鲜", nutrition:{calories:220,protein:20,carbs:8,fat:12,fiber:2,vitaminC:3} },
+      { name:"砂锅酿豆腐",type:"砂锅煲", ingredients:["豆腐","猪肉","白菜","葱","姜"], difficulty:"中等", time:35, taste:"清淡", nutrition:{calories:240,protein:22,carbs:10,fat:12,fiber:3,vitaminC:8} },
+      // 粉面速食
+      { name:"炒米粉",type:"主食", ingredients:["米粉","鸡蛋","豆芽","青菜","蒜"], difficulty:"简单", time:12, taste:"咸鲜", nutrition:{calories:380,protein:12,carbs:48,fat:16,fiber:3,vitaminC:8} },
+      { name:"酸辣粉",type:"主食", ingredients:["红薯粉","花生","榨菜","辣椒油","醋"], difficulty:"简单", time:15, taste:"麻辣", nutrition:{calories:350,protein:8,carbs:45,fat:16,fiber:3,vitaminC:5} },
+      // 饮料甜品
+      { name:"草莓奶昔",type:"饮料甜品", ingredients:["草莓","牛奶","蜂蜜"], difficulty:"简单", time:5, taste:"甜口", nutrition:{calories:180,protein:5,carbs:28,fat:6,fiber:2,vitaminC:40} },
+      { name:"香蕉奶昔",type:"饮料甜品", ingredients:["香蕉","牛奶","蜂蜜"], difficulty:"简单", time:5, taste:"甜口", nutrition:{calories:200,protein:6,carbs:32,fat:5,fiber:3,vitaminC:8} },
+      { name:"芒果奶昔",type:"饮料甜品", ingredients:["芒果","牛奶","酸奶"], difficulty:"简单", time:5, taste:"甜口", nutrition:{calories:190,protein:5,carbs:30,fat:6,fiber:2,vitaminC:35} },
+      { name:"蓝莓奶昔",type:"饮料甜品", ingredients:["蓝莓","牛奶","酸奶","蜂蜜"], difficulty:"简单", time:5, taste:"甜口", nutrition:{calories:170,protein:5,carbs:26,fat:5,fiber:3,vitaminC:15} },
+      { name:"西瓜汁",type:"饮料甜品", ingredients:["西瓜"], difficulty:"简单", time:5, taste:"甜口", nutrition:{calories:80,protein:1,carbs:18,fat:0,fiber:1,vitaminC:25} },
+      { name:"鲜榨橙汁",type:"饮料甜品", ingredients:["橙子"], difficulty:"简单", time:5, taste:"甜口", nutrition:{calories:100,protein:2,carbs:22,fat:0,fiber:2,vitaminC:60} },
+      { name:"柠檬蜂蜜水",type:"饮料甜品", ingredients:["柠檬","蜂蜜"], difficulty:"简单", time:3, taste:"酸甜", nutrition:{calories:50,protein:0,carbs:13,fat:0,fiber:0,vitaminC:20} },
+      { name:"芒果西米露",type:"饮料甜品", ingredients:["芒果","西米","椰奶","糖"], difficulty:"中等", time:25, taste:"甜口", nutrition:{calories:220,protein:3,carbs:40,fat:6,fiber:2,vitaminC:25} },
+      { name:"杨枝甘露",type:"饮料甜品", ingredients:["芒果","椰奶","西米","西柚"], difficulty:"中等", time:25, taste:"甜口", nutrition:{calories:240,protein:3,carbs:42,fat:7,fiber:3,vitaminC:30} },
+      { name:"双皮奶",type:"饮料甜品", ingredients:["牛奶","鸡蛋","糖"], difficulty:"中等", time:30, taste:"甜口", nutrition:{calories:160,protein:8,carbs:18,fat:6,fiber:0,vitaminC:1} },
+      { name:"姜撞奶",type:"饮料甜品", ingredients:["牛奶","姜","糖"], difficulty:"中等", time:15, taste:"甜口", nutrition:{calories:140,protein:6,carbs:16,fat:6,fiber:0,vitaminC:1} },
+      { name:"红豆沙",type:"饮料甜品", ingredients:["红豆","冰糖","陈皮"], difficulty:"简单", time:45, taste:"甜口", nutrition:{calories:180,protein:8,carbs:35,fat:1,fiber:5,vitaminC:2} },
+      { name:"绿豆沙",type:"饮料甜品", ingredients:["绿豆","冰糖"], difficulty:"简单", time:40, taste:"甜口", nutrition:{calories:170,protein:8,carbs:34,fat:1,fiber:4,vitaminC:2} },
+      { name:"芋圆仙草冻",type:"饮料甜品", ingredients:["芋头","红薯粉","仙草","糖"], difficulty:"中等", time:35, taste:"甜口", nutrition:{calories:250,protein:3,carbs:48,fat:5,fiber:3,vitaminC:5} },
+      { name:"水果捞",type:"饮料甜品", ingredients:["西瓜","芒果","草莓","椰奶","酸奶"], difficulty:"简单", time:10, taste:"甜口", nutrition:{calories:200,protein:5,carbs:35,fat:6,fiber:4,vitaminC:45} },
+      { name:"酸奶水果杯",type:"饮料甜品", ingredients:["酸奶","草莓","香蕉","蜂蜜","燕麦"], difficulty:"简单", time:5, taste:"甜口", nutrition:{calories:220,protein:8,carbs:36,fat:5,fiber:4,vitaminC:20} },
+      { name:"戚风蛋糕",type:"饮料甜品", ingredients:["鸡蛋","面粉","牛奶","糖"], difficulty:"困难", time:45, taste:"甜口", nutrition:{calories:300,protein:10,carbs:35,fat:14,fiber:1,vitaminC:1} },
+      { name:"轻芝士蛋糕",type:"饮料甜品", ingredients:["芝士","鸡蛋","黄油","面粉","糖"], difficulty:"困难", time:55, taste:"甜口", nutrition:{calories:350,protein:12,carbs:28,fat:22,fiber:0,vitaminC:1} },
+      { name:"芒果布丁",type:"饮料甜品", ingredients:["芒果","牛奶","糖","吉利丁"], difficulty:"中等", time:20, taste:"甜口", nutrition:{calories:160,protein:4,carbs:26,fat:5,fiber:1,vitaminC:18} },
+      { name:"焦糖布丁",type:"饮料甜品", ingredients:["鸡蛋","牛奶","糖"], difficulty:"中等", time:25, taste:"甜口", nutrition:{calories:180,protein:7,carbs:24,fat:7,fiber:0,vitaminC:1} },
+      { name:"自制奶茶",type:"饮料甜品", ingredients:["茶叶","牛奶","糖"], difficulty:"简单", time:10, taste:"甜口", nutrition:{calories:120,protein:3,carbs:16,fat:4,fiber:0,vitaminC:1} },
+      { name:"珍珠奶茶",type:"饮料甜品", ingredients:["木薯粉","茶叶","牛奶","红糖"], difficulty:"中等", time:30, taste:"甜口", nutrition:{calories:250,protein:3,carbs:42,fat:8,fiber:1,vitaminC:1} },
+      { name:"冰粉",type:"饮料甜品", ingredients:["冰粉粉","红糖","花生","葡萄干","芝麻"], difficulty:"简单", time:15, taste:"甜口", nutrition:{calories:130,protein:2,carbs:28,fat:2,fiber:1,vitaminC:1} },
+      { name:"烧仙草",type:"饮料甜品", ingredients:["仙草","芋圆","红豆","花生","牛奶"], difficulty:"中等", time:30, taste:"甜口", nutrition:{calories:280,protein:8,carbs:45,fat:8,fiber:4,vitaminC:3} },
+      { name:"巧克力熔岩蛋糕",type:"饮料甜品", ingredients:["巧克力","鸡蛋","黄油","面粉","糖"], difficulty:"困难", time:30, taste:"甜口", nutrition:{calories:420,protein:8,carbs:38,fat:28,fiber:2,vitaminC:1} },
+      { name:"提拉米苏",type:"饮料甜品", ingredients:["芝士","鸡蛋","咖啡","可可粉","手指饼干"], difficulty:"困难", time:40, taste:"甜口", nutrition:{calories:380,protein:10,carbs:32,fat:24,fiber:1,vitaminC:1} },
+      { name:"椰奶冻",type:"饮料甜品", ingredients:["椰奶","牛奶","糖","吉利丁"], difficulty:"简单", time:15, taste:"甜口", nutrition:{calories:150,protein:3,carbs:18,fat:8,fiber:0,vitaminC:1} },
+      { name:"抹茶拿铁",type:"饮料甜品", ingredients:["抹茶粉","牛奶","糖"], difficulty:"简单", time:5, taste:"甜口", nutrition:{calories:110,protein:4,carbs:14,fat:4,fiber:0,vitaminC:1} },
+      { name:"草莓慕斯",type:"饮料甜品", ingredients:["草莓","奶油","糖","吉利丁"], difficulty:"中等", time:25, taste:"甜口", nutrition:{calories:220,protein:3,carbs:24,fat:14,fiber:1,vitaminC:30} },
+      { name:"芒果糯米饭",type:"饮料甜品", ingredients:["芒果","糯米","椰奶","糖"], difficulty:"中等", time:30, taste:"甜口", nutrition:{calories:320,protein:5,carbs:55,fat:10,fiber:3,vitaminC:25} },
+      { name:"红糖冰粉",type:"饮料甜品", ingredients:["冰粉粉","红糖","花生","山楂","葡萄干"], difficulty:"简单", time:12, taste:"甜口", nutrition:{calories:140,protein:2,carbs:30,fat:2,fiber:1,vitaminC:1} },
+      { name:"酒酿圆子",type:"饮料甜品", ingredients:["糯米粉","酒酿","冰糖","枸杞"], difficulty:"简单", time:15, taste:"甜口", nutrition:{calories:200,protein:3,carbs:38,fat:3,fiber:1,vitaminC:1} },
+      { name:"椰汁西米露",type:"饮料甜品", ingredients:["椰奶","西米","糖"], difficulty:"简单", time:20, taste:"甜口", nutrition:{calories:190,protein:2,carbs:32,fat:7,fiber:1,vitaminC:1} },
+      { name:"水果冰沙",type:"饮料甜品", ingredients:["草莓","香蕉","冰块","蜂蜜"], difficulty:"简单", time:5, taste:"甜口", nutrition:{calories:120,protein:1,carbs:28,fat:1,fiber:3,vitaminC:35} },
+      { name:"鸳鸯奶茶",type:"饮料甜品", ingredients:["茶叶","咖啡","牛奶","糖"], difficulty:"简单", time:8, taste:"甜口", nutrition:{calories:100,protein:3,carbs:12,fat:4,fiber:0,vitaminC:1} }
+    ];
+
+    const dailyGoals = { calories: 2000, protein: 60, carbs: 250, fat: 65, fiber: 25, vitaminC: 100 };
+
+    let userIngredients = [];
+
+    // ===== 交互 =====
+    document.getElementById('ingredientInput').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') addIngredient();
+    });
+
+    // 统一标签切换逻辑：每个 select-group 内单选
+    document.querySelectorAll('.select-group').forEach(group => {
+      group.addEventListener('click', function(e) {
+        if (e.target.classList.contains('select-option')) {
+          group.querySelectorAll('.select-option').forEach(o => o.classList.remove('active'));
+          e.target.classList.add('active');
+        }
+      });
+    });
+
+    function addIngredient() {
+      const input = document.getElementById('ingredientInput');
+      const val = input.value.trim();
+      if (val && !userIngredients.includes(val)) {
+        userIngredients.push(val);
+        input.value = '';
+        renderTags();
+      }
+    }
+
+    function quickAdd(name) {
+      if (!userIngredients.includes(name)) {
+        userIngredients.push(name);
+        renderTags();
+      }
+    }
+
+    function toggleCat(header) {
+      const body = header.nextElementSibling;
+      const isOpen = body.classList.contains('open');
+      if (isOpen) {
+        body.classList.remove('open');
+        header.classList.remove('open');
+      } else {
+        body.classList.add('open');
+        header.classList.add('open');
+      }
+    }
+
+    function removeIngredient(name) {
+      userIngredients = userIngredients.filter(i => i !== name);
+      renderTags();
+    }
+
+    function renderTags() {
+      const container = document.getElementById('ingredientTags');
+      container.innerHTML = userIngredients.map(i =>
+        `<span class="tag">${i} <span class="remove" onclick="removeIngredient('${i}')">&times;</span></span>`
+      ).join('');
+    }
+
+    // ===== 核心逻辑 =====
+    // 食材同义词/家族映射（仅限真正可互换的食材）
+    const ingredientFamily = {
+      '牛肉': ['牛肉','牛腩','肥牛','牛柳','牛肉末','牛排'],
+      '猪肉': ['猪肉','五花肉','肉末','猪肉末','里脊','瘦肉'],
+      '鸡肉': ['鸡肉','鸡胸肉','鸡腿','鸡翅','鸡块','鸡柳'],
+      '鸭': ['鸭','鸭肉','鸭腿','鸭翅'],
+      '羊肉': ['羊肉','羊排','羊腿'],
+      '鸡蛋': ['鸡蛋','蛋液'],
+      '虾': ['虾','虾仁','虾肉','虾皮'],
+      '鱼': ['鲈鱼','草鱼','鲤鱼','带鱼','石斑鱼','鱼块','鱼头','黄鱼'],
+      '三文鱼': ['三文鱼','三文','鲑鱼'],
+      '豆腐': ['豆腐','嫩豆腐','老豆腐'],
+      '豆制品': ['豆干','豆皮','腐竹'],
+      '蘑菇': ['蘑菇','香菇','杏鲍菇','金针菇','菌菇'],
+      '青菜': ['青菜','生菜','菜心','油菜','茼蒿','芥蓝','空心菜','红薯叶','娃娃菜','大白菜'],
+      '番茄': ['番茄','西红柿'],
+      '土豆': ['土豆','马铃薯'],
+      '青椒': ['青椒','甜椒','柿子椒','彩椒'],
+      '辣椒': ['干辣椒','泡椒','剁椒','辣椒粉','辣椒油'],
+      '面条': ['面条','意面','意大利面','乌冬面','河粉','米粉','红薯粉','宽面','粉丝','粉条'],
+      '米饭': ['米饭','大米','饭'],
+      '面包': ['面包','吐司','面包丁'],
+      '牛奶': ['牛奶','奶','酸奶'],
+      '葱': ['葱','大葱','小葱','香葱'],
+      '姜': ['姜','生姜'],
+      '蒜': ['蒜','大蒜','蒜末','蒜泥'],
+      '牛油果': ['牛油果','鳄梨'],
+      '辣椒粉类': ['花椒','麻椒','辣椒粉','辣椒油','干辣椒'],
+      '鱿鱼': ['鱿鱼','鱿','墨鱼'],
+      '螃蟹': ['螃蟹','蟹','大闸蟹'],
+      '花菜': ['花菜','菜花','西兰花'],
+      '胡萝卜': ['胡萝卜','红萝卜'],
+      '豆芽': ['豆芽','绿豆芽','黄豆芽'],
+      '玉米': ['玉米','玉米粒'],
+      '四季豆': ['四季豆','豆角','豇豆'],
+      '茄子': ['茄子'],
+      '黄瓜': ['黄瓜','青瓜'],
+      '冬瓜': ['冬瓜'],
+      '南瓜': ['南瓜','金瓜'],
+      '红薯': ['红薯','地瓜','番薯'],
+      '莲藕': ['莲藕','藕'],
+      '山药': ['山药','淮山'],
+      '竹笋': ['竹笋','笋','冬笋','春笋'],
+      '海带': ['海带','昆布'],
+      '木耳': ['木耳','黑木耳'],
+      '花生': ['花生','花生米','花生碎'],
+      '芝士': ['芝士','奶酪','起司'],
+      '腊肠': ['腊肠','香肠'],
+      '火腿': ['火腿','午餐肉','火腿肠'],
+    };
+
+    function normalizeIngredient(ing) {
+      return ing.trim();
+    }
+
+    function getIngredientFamily(name) {
+      for (const [key, variants] of Object.entries(ingredientFamily)) {
+        if (variants.includes(name)) return variants;
+      }
+      return [name];
+    }
+
+    // 基础调料/辅料 - 不计入匹配分母
+    const baseSeasonings = new Set(['葱','姜','蒜','盐','酱油','糖','醋','料酒','淀粉','黑胡椒','白胡椒','胡椒粉','花椒','干辣椒','辣椒油','豆瓣酱','八角','桂皮','蚝油','椒盐','味噌','芥末','迷迭香','面粉','温水','黄酒','豆豉','芝麻','孜然粉','辣椒粉','咖喱粉','蜂蜜','冰糖','红枣','枸杞']);
+
+    function matchRecipe(recipe, userIngredients) {
+      const needed = recipe.ingredients;
+      const userFamilySet = new Set();
+      const userExactSet = new Set(userIngredients);
+      userIngredients.forEach(ui => {
+        getIngredientFamily(ui).forEach(f => userFamilySet.add(f));
+      });
+
+      let exactMatches = 0;
+      let familyMatches = 0;
+      let fuzzyMatches = 0;
+      const needToBuy = [];    // 用户没选的所有食材（含调料）
+
+      needed.forEach(ni => {
+        const niFamily = getIngredientFamily(ni);
+
+        // 精确匹配
+        if (userExactSet.has(ni)) {
+          exactMatches++;
+          return;
+        }
+        // 家族匹配
+        if (niFamily.some(f => userFamilySet.has(f))) {
+          familyMatches++;
+          needToBuy.push(ni);
+          return;
+        }
+        // 子串模糊（双方>=2字）
+        if (userIngredients.some(ui => {
+          if (ui.length < 2 || ni.length < 2) return false;
+          return ni.includes(ui) || ui.includes(ni);
+        })) {
+          fuzzyMatches++;
+          needToBuy.push(ni);
+          return;
+        }
+        // 没匹配，需要采购
+        needToBuy.push(ni);
+      });
+
+      const totalNeeded = needed.length;
+      const matchRate = (exactMatches * 1.0 + familyMatches * 0.7 + fuzzyMatches * 0.4) / Math.max(1, totalNeeded);
+
+      return {
+        ...recipe,
+        needToBuy,
+        _coreMatched: exactMatches + familyMatches + fuzzyMatches,
+        _allHave: (needToBuy.length === 0),
+        matchRate: Math.min(1, matchRate)
+      };
+    }
+
+    function filterRecipes(userIngredients, goal, taste, dishType) {
+      let matched = recipes.map(r => matchRecipe(r, userIngredients));
+      // 必须有至少1个核心食材真正命中
+      matched = matched.filter(r => r._coreMatched > 0);
+      // 菜品类型硬过滤：选了类型就只出那一类
+      if (dishType && dishType !== '不限制') {
+        matched = matched.filter(r => r.type === dishType);
+      }
+      // 口味偏好加权
+      if (taste && taste !== '不限制') {
+        matched.forEach(r => { if (r.taste === taste) r.matchRate += 0.08; });
+      }
+      // 健康目标加权
+      if (goal === '减脂' || goal === '控糖') {
+        matched.forEach(r => {
+          if (r.taste === '清淡') r.matchRate += 0.05;
+          if (r.taste === '麻辣' || r.taste === '重口味') r.matchRate -= 0.05;
+        });
+      }
+      matched.sort((a, b) => b.matchRate - a.matchRate);
+      return matched;  // 返回全部，由翻页控制显示
+    }
+
+    // ===== 菜品类型由 recipe.type 字段直接提供，无需推断 =====
+
+    // ===== 纯资料推荐（无食材时按用户画像推荐） =====
+    function recommendByProfile(goal, taste, dishType, health) {
+      // 统计用户已设置的条件数
+      const hasGoal = goal && goal !== '均衡饮食';
+      const hasTaste = taste && taste !== '不限制';
+      const hasType = dishType && dishType !== '不限制';
+      const hasHealth = health && health !== '正常';
+      const anyFilter = hasGoal || hasTaste || hasType || hasHealth;
+
+      let scored = recipes.map(r => {
+        let score = 0.4; // 基础分
+        const dt = r.type || '其他';
+
+        if (hasType) {
+          // 类型已在下方硬过滤，不在此处加权
+        }
+        if (hasTaste) {
+          if (r.taste === taste) score += 0.25;
+          else if (taste === '清淡' && r.taste !== '麻辣' && r.taste !== '重口味') score += 0.08;
+          else if (taste === '麻辣' && (r.taste === '微辣' || r.taste === '麻辣')) score += 0.10;
+        }
+        
+        if (hasGoal) {
+          if (goal === '减脂') {
+            if (r.nutrition.calories < 200) score += 0.20;
+            else if (r.nutrition.calories < 350) score += 0.10;
+            if (dt === '素菜' || dt === '轻食沙拉' || dt === '海鲜') score += 0.12;
+            if (r.taste === '清淡') score += 0.10;
+          } else if (goal === '增肌' || goal === '高蛋白') {
+            if (r.nutrition.protein >= 25) score += 0.20;
+            else if (r.nutrition.protein >= 18) score += 0.10;
+            if (dt === '肉菜' || dt === '海鲜' || dt === '蛋类') score += 0.12;
+          } else if (goal === '控糖') {
+            if (r.nutrition.carbs < 10) score += 0.20;
+            else if (r.nutrition.carbs < 20) score += 0.10;
+            if (dt === '素菜' || dt === '海鲜' || dt === '蛋类') score += 0.10;
+          } else if (goal === '低钠') {
+            if (r.taste === '清淡') score += 0.25;
+            if (dt !== '小吃') score += 0.05;
+          } else if (goal === '高纤维') {
+            if (r.nutrition.fiber >= 4) score += 0.20;
+            else if (r.nutrition.fiber >= 2) score += 0.10;
+            if (dt === '素菜') score += 0.10;
+          }
+        }
+
+        if (hasHealth) {
+          if (health === '高血压') {
+            if (r.taste === '清淡') score += 0.15;
+            if (dt !== '小吃' && dt !== '砂锅煲') score += 0.05;
+          }
+          if (health === '糖尿病') {
+            if (r.nutrition.carbs < 15) score += 0.15;
+          }
+          if (health === '高血脂') {
+            if (r.taste === '清淡' && r.nutrition.fat < 15) score += 0.15;
+          }
+          if (health === '痛风') {
+            if (dt === '素菜' || dt === '蛋类' || dt === '豆制品' || dt === '主食') score += 0.20;
+            if (dt === '海鲜') score -= 0.4;
+            const risky = ['牛肉','猪肉','羊肉','内脏','虾','蟹','蛤','扇贝','三文鱼','带鱼','鱿鱼'];
+            if (risky.some(k => r.ingredients.join('').includes(k))) score -= 0.25;
+          }
+          if (health === '花生过敏') {
+            if (r.ingredients.join('').includes('花生')) score -= 0.5;
+          }
+          if (health === '海鲜过敏') {
+            const seafood = ['虾','蟹','蛤','扇贝','鱿鱼','三文鱼','带鱼','鲈鱼','草鱼','鲤鱼','海参','蛏子'];
+            if (seafood.some(k => r.ingredients.join('').includes(k))) score -= 0.5;
+          }
+          if (health === '乳糖不耐受') {
+            if (r.ingredients.join('').includes('牛奶') || r.ingredients.join('').includes('奶油') || r.ingredients.join('').includes('奶酪') || r.ingredients.join('').includes('芝士')) score -= 0.4;
+          }
+        }
+
+        // 没有选择任何偏好时，加随机扰动保证多样性
+        if (!anyFilter) {
+          score += Math.random() * 0.3;
+        }
+
+        return { ...r, needToBuy: r.ingredients, _coreMatched: 0, _allHave: false, matchRate: Math.max(0, Math.min(1, score)) };
+      });
+
+      // 菜品类型硬过滤
+      if (hasType) {
+        scored = scored.filter(r => r.type === dishType);
+      }
+      if (scored.length === 0) {
+        // 兜底：如果所选类型无结果，返回空
+        return [];
+      }
+      scored.sort((a, b) => b.matchRate - a.matchRate);
+      return scored;
+    }
+
+    function calculateNutrition(selectedRecipes) {
+      let total = { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, vitaminC: 0 };
+      selectedRecipes.forEach(r => {
+        Object.keys(total).forEach(k => total[k] += r.nutrition[k]);
+      });
+      return total;
+    }
+
+    function analyzeNutrition(total, goal) {
+      let warnings = [];
+      let suggestions = [];
+      const proteinGap = dailyGoals.protein - total.protein;
+      const fiberGap = dailyGoals.fiber - total.fiber;
+      const vitaminCGap = dailyGoals.vitaminC - total.vitaminC;
+
+      if (proteinGap > 10) {
+        warnings.push(`蛋白质摄入不足，缺口约 ${Math.round(proteinGap)}g`);
+        suggestions.push(`建议增加：鸡蛋、鸡胸肉、豆腐、虾仁`);
+      }
+      if (fiberGap > 5) {
+        warnings.push(`膳食纤维不足，缺口约 ${Math.round(fiberGap)}g`);
+        suggestions.push(`建议增加：青菜、土豆、蘑菇`);
+      }
+      if (vitaminCGap > 20) {
+        warnings.push(`维生素C不足，缺口约 ${Math.round(vitaminCGap)}mg`);
+        suggestions.push(`建议增加：番茄、青椒、青菜`);
+      }
+      if (goal === '减脂' && total.calories > 500) {
+        warnings.push('当前菜谱热量偏高，减脂建议单餐控制在500大卡以内');
+      }
+      if (goal === '增肌' && total.protein < 50) {
+        warnings.push('增肌需要更多蛋白质，目前蛋白质摄入偏低');
+        suggestions.push(`建议增加：牛肉、鸡胸肉、鸡蛋`);
+      }
+      if (goal === '高蛋白' && total.protein < 50) {
+        warnings.push('高蛋白目标下蛋白质摄入未达标');
+        suggestions.push(`建议增加：牛肉、虾仁、鸡胸肉、鸡蛋`);
+      }
+      if (goal === '低钠') {
+        warnings.push('低钠饮食请减少酱油和盐的使用量');
+      }
+      return { warnings, suggestions };
+    }
+
+    // ===== AI建议 =====
+    function generateAIAdvice(selectedRecipes, total, goal, health, taste, healthManual, goalManual, tasteManual, typeManual) {
+      let messages = [];
+      if (userIngredients.length > 0) {
+        messages.push(`<span class="ai-name">AI 饮食顾问：</span> 根据您的食材，我为您筛选了 ${selectedRecipes.length} 道菜谱。`);
+      } else {
+        messages.push(`<span class="ai-name">AI 饮食顾问：</span> 您未添加食材，我根据您的${goal || '饮食'}目标${health && health !== '正常' ? '和健康状态' : ''}为您推荐了 ${selectedRecipes.length} 道菜谱，添加食材后匹配更精准。`);
+      }
+
+      if (goal === '减脂') {
+        messages.push(`<span class="ai-name">AI 营养分析师：</span> 减脂期间建议选择清蒸虾仁、虾仁青菜等低热量低脂菜品，总热量控制在合理范围内。`);
+      } else if (goal === '增肌') {
+        messages.push(`<span class="ai-name">AI 营养分析师：</span> 增肌需要充足的蛋白质，推荐牛肉和鸡胸肉为主的菜谱，建议搭配加餐。`);
+      } else if (goal === '控糖') {
+        messages.push(`<span class="ai-name">AI 营养分析师：</span> 控糖需要关注碳水来源，优先选择蔬菜和低GI食材，避免精制主食。`);
+      } else if (goal === '高蛋白') {
+        messages.push(`<span class="ai-name">AI 营养分析师：</span> 高蛋白方案已启动，牛肉、虾仁、鸡蛋、豆腐都是优质来源。`);
+      } else if (goal === '低钠') {
+        messages.push(`<span class="ai-name">AI 营养分析师：</span> 低钠饮食以清淡为主，调味可用香料代替盐和酱油。`);
+      } else if (goal === '高纤维') {
+        messages.push(`<span class="ai-name">AI 营养分析师：</span> 推荐多选蔬菜类菜谱，膳食纤维助消化、稳血糖。`);
+      } else {
+        messages.push(`<span class="ai-name">AI 营养分析师：</span> 均衡饮食建议荤素搭配，今天的菜谱覆盖了多种食材，营养比较全面。`);
+      }
+
+      if (health.includes('高血压')) {
+        messages.push(`<span class="ai-name">AI 饮食顾问：</span> 高血压请注意控制盐分，建议选择清淡口味的菜品，少用酱油和盐。`);
+      }
+      if (health.includes('糖尿病')) {
+        messages.push(`<span class="ai-name">AI 饮食顾问：</span> 控糖建议减少土豆等主食类食材的摄入，多选择蔬菜和优质蛋白。`);
+      }
+      if (health.includes('痛风')) {
+        messages.push(`<span class="ai-name">AI 饮食顾问：</span> 痛风需要低嘌呤饮食，避免内脏和高嘌呤海鲜，多喝水。`);
+      }
+      if (health.includes('高血脂')) {
+        messages.push(`<span class="ai-name">AI 饮食顾问：</span> 高血脂建议减少动物脂肪摄入，多选择鱼虾和豆制品，增加膳食纤维。`);
+      }
+      if (health.includes('孕期') || health.includes('哺乳期')) {
+        messages.push(`<span class="ai-name">AI 饮食顾问：</span> ${health}期间需要加强营养，补充叶酸、铁、钙，保证优质蛋白和新鲜蔬菜。`);
+      }
+      if (health.includes('过敏') || health.includes('不耐受')) {
+        messages.push(`<span class="ai-name">AI 饮食顾问：</span> 已考虑您的过敏/不耐受情况，推荐菜谱会自动避开相关食材。`);
+      }
+
+      if (healthManual) {
+        messages.push(`<span class="ai-name">AI 饮食顾问：</span> 已关注到您的补充信息"${healthManual}"，我会在推荐策略中计入。`);
+      }
+      if (goalManual) {
+        messages.push(`<span class="ai-name">AI 营养分析师：</span> 针对您的个性化目标"${goalManual}"，推荐方向已做微调。`);
+      }
+      if (tasteManual) {
+        messages.push(`<span class="ai-name">AI 烹饪指导：</span> 已记住您的口味偏好"${tasteManual}"，烹饪时请注意相应调整。`);
+      }
+      if (typeManual) {
+        messages.push(`<span class="ai-name">AI 饮食顾问：</span> 了解您想吃的类型"${typeManual}"，已优先为您匹配。`);
+      }
+
+      const missingIngredients = new Set();
+      if (userIngredients.length > 0) {
+        selectedRecipes.forEach(r => r.needToBuy && r.needToBuy.forEach(i => missingIngredients.add(i)));
+        if (missingIngredients.size > 0) {
+          messages.push(`<span class="ai-name">AI 购物助手：</span> 需采购 ${[...missingIngredients].join('、')}。`);
+        }
+      }
+
+      if (taste === '麻辣' || taste === '重口味') {
+        messages.push(`<span class="ai-name">AI 烹饪指导：</span> ${taste}风味，火候要到位，辣椒花椒爆出香味再下主料，注意别烧焦。`);
+      } else if (taste === '酸甜') {
+        messages.push(`<span class="ai-name">AI 烹饪指导：</span> 酸甜口味关键在于糖醋比例，建议2:1左右，先酸后甜层次分明。`);
+      } else {
+        messages.push(`<span class="ai-name">AI 烹饪指导：</span> 今天的菜谱难度以${selectedRecipes[0]?.difficulty || '简单'}为主，祝您烹饪愉快！`);
+      }
+
+      return messages;
+    }
+
+    function getSelectedTag(groupId) {
+      const active = document.querySelector(`#${groupId} .select-option.active`);
+      return active ? active.dataset.value : '';
+    }
+
+    function getManualInput(inputId) {
+      return document.getElementById(inputId).value.trim();
+    }
+
+    // ===== AI 智能体分析函数 =====
+    function aiAnalyzeHealth() {
+      const selected = getSelectedTag('healthTags');
+      const manual = getManualInput('healthManual');
+      const resultDiv = document.getElementById('healthAIResult');
+      let advice = [];
+
+      if (!selected || selected === '正常') {
+        advice.push('✅ 您当前健康状态良好，保持均衡饮食即可。');
+      } else {
+        const healthAdvice = {
+          '高血压': '⚠️ 建议<span class="highlight">低钠饮食</span>，每日盐摄入<5g，多摄入钾（香蕉、土豆），避免腌制食品。',
+          '糖尿病': '⚠️ 建议<span class="highlight">低GI饮食</span>，控制精制碳水（白米白面），优先粗粮、蔬菜，注意餐后血糖。',
+          '高血脂': '⚠️ 建议<span class="highlight">低脂饮食</span>，减少动物脂肪，多摄入不饱和脂肪酸（鱼油、坚果），多吃膳食纤维。',
+          '痛风': '⚠️ 建议<span class="highlight">低嘌呤饮食</span>，避免内脏、海鲜、浓汤、啤酒，多喝水促进尿酸排泄。',
+          '孕期': '🤰 重点补充<span class="highlight">叶酸、铁、钙、DHA</span>，避免生食、含汞鱼类，保证优质蛋白。',
+          '哺乳期': '🤱 需要<span class="highlight">额外500kcal/天</span>，多喝汤水促进泌乳，补充钙和DHA，忌酒精和咖啡因。',
+          '花生过敏': '🚫 严格避免<span class="highlight">花生及花生制品</span>，注意查看食品配料表，警惕交叉污染。',
+          '海鲜过敏': '🚫 严格避免<span class="highlight">鱼类、虾蟹、贝类</span>，注意蚝油、鱼露等海鲜衍生调味品。',
+          '乳糖不耐受': '🚫 避免<span class="highlight">牛奶、奶酪等乳制品</span>，可选择乳糖水解奶、酸奶或植物奶替代。',
+          '麸质过敏': '🚫 避免<span class="highlight">小麦、大麦、黑麦</span>等含麸质食物，选择米饭、玉米、荞麦等无麸质主食。'
+        };
+        advice.push(healthAdvice[selected] || `关于"${selected}"：请参考通用健康饮食原则。`);
+      }
+
+      if (manual) {
+        advice.push(`📝 收到您的补充："<span class="highlight">${manual}</span>"——我会在推荐菜谱时特别注意这一点。`);
+      }
+
+      resultDiv.innerHTML = `<div class="ai-msg">${advice.join('</div><div class="ai-msg" style="margin-top:6px">')}</div>`;
+      resultDiv.classList.remove('hidden');
+    }
+
+    function aiAnalyzeGoal() {
+      const selected = getSelectedTag('goalTags');
+      const manual = getManualInput('goalManual');
+      const resultDiv = document.getElementById('goalAIResult');
+      let advice = [];
+
+      const goalAdvice = {
+        '均衡饮食': '🥗 荤素搭配，碳水:蛋白:脂肪≈50:20:30，多吃蔬菜水果，保证营养全面。',
+        '减脂': '🔥 控制总热量，<span class="highlight">碳水适量减少</span>，蛋白质摄入1.6-2.2g/kg体重，多蔬菜，少油烹饪。',
+        '增肌': '💪 <span class="highlight">蛋白质至少1.6g/kg体重</span>，碳水充足保证训练能量，少食多餐，训练后补充快蛋白。',
+        '维持体重': '⚖️ 保持热量平衡，饮食规律，避免暴饮暴食，每周称重一次监控趋势。',
+        '控糖': '🩸 选择<span class="highlight">低GI碳水</span>（燕麦、糙米、全麦），餐后适量运动，控制水果份量，避免含糖饮料。',
+        '高蛋白': '🥩 每日蛋白质目标≥1.6g/kg体重，<span class="highlight">鸡胸肉、牛肉、鱼虾、鸡蛋、豆腐</span>任你组合。',
+        '低钠': '🧂 每日盐<5g，<span class="highlight">少放酱油和盐</span>，用香料、柠檬汁提味，避免加工食品和外卖。',
+        '高纤维': '🌾 每日纤维≥25g，多吃<span class="highlight">青菜、菌菇、粗粮、豆类</span>，促进肠道健康。'
+      };
+
+      if (selected) {
+        advice.push(goalAdvice[selected] || `针对"${selected}"的目标，我会为您精准匹配菜谱。`);
+      }
+
+      if (manual) {
+        advice.push(`📝 了解您的个性化需求："<span class="highlight">${manual}</span>"——我会在推荐时加以考虑。`);
+      }
+
+      resultDiv.innerHTML = `<div class="ai-msg">${advice.join('</div><div class="ai-msg" style="margin-top:6px">')}</div>`;
+      resultDiv.classList.remove('hidden');
+    }
+
+    function aiAnalyzeTaste() {
+      const selected = getSelectedTag('tasteTags');
+      const manual = getManualInput('tasteManual');
+      const resultDiv = document.getElementById('tasteAIResult');
+      let advice = [];
+
+      const tasteAdvice = {
+        '清淡': '🥬 少油少盐，以蒸、煮、白灼为主，突出食材本味，推荐清蒸虾仁、蒜蓉青菜等。',
+        '微辣': '🌶️ 适量辣椒提味，不掩盖食材原味，青椒、豆瓣酱少量点缀即可。',
+        '麻辣': '🔥🌶️ 重麻重辣，花椒+辣椒齐上阵，适合川菜风味，但注意不要过量刺激肠胃。',
+        '酸甜': '🍋 糖醋、番茄、柠檬调味，开胃解腻，推荐番茄炒蛋、糖醋里脊等。',
+        '咸鲜': '🧂 酱油、蚝油、鸡精提鲜，突出食材鲜美，适合炒菜和红烧。',
+        '甜口': '🍯 偏甜调味，蜂蜜、冰糖、甜面酱是好搭档，注意糖摄入量。',
+        '重口味': '💥 浓油赤酱，重盐重料，口感浓郁，但需注意健康风险。',
+        '五香': '⭐ 花椒、八角、桂皮、丁香、茴香，经典中式调味，适合炖煮和卤味。'
+      };
+
+      if (selected) {
+        advice.push(tasteAdvice[selected] || `偏好"${selected}"口味，我会优先推荐符合您口味的菜谱。`);
+      }
+
+      if (manual) {
+        advice.push(`📝 记下您的偏好："<span class="highlight">${manual}</span>"——筛选菜谱时会避开您不喜欢的。`);
+      }
+
+      resultDiv.innerHTML = `<div class="ai-msg">${advice.join('</div><div class="ai-msg" style="margin-top:6px">')}</div>`;
+      resultDiv.classList.remove('hidden');
+    }
+
+    function aiAnalyzeType() {
+      const selected = getSelectedTag('typeTags');
+      const manual = getManualInput('typeManual');
+      const resultDiv = document.getElementById('typeAIResult');
+      let advice = [];
+
+      const typeAdvice = {
+        '肉菜': '🥩 精选肉类菜谱：红烧、爆炒、炖煮——满足您的肉食欲望。',
+        '素菜': '🥬 素食也能很精彩：蒜蓉、蚝油、清炒——蔬菜的N种打开方式。',
+        '海鲜': '🐟 海鲜档开启：清蒸、蒜蓉、椒盐——鲜美就是最好的调味。',
+        '汤': '🍲 汤暖人心：鲜美的骨汤、清甜的蔬菜汤、浓郁的海鲜汤任您选择。',
+        '主食': '🍚 主食模式：饭、面、粉、粥应有尽有。',
+        '凉菜': '🧊 清凉一夏：凉拌、白切、拍黄瓜——开胃解暑就靠它们。',
+        '小吃': '🥟 小吃档：春卷、炸鸡柳、韭菜盒子——零嘴也能幸福感拉满。',
+        '饮料甜品': '🍹 甜点时光：奶昔、糖水、银耳羹——给今天来点甜。',
+        '日韩': '🍣 日韩风味：寿司、刺身、亲子丼、韩式拌饭——清新精致的东方料理。',
+        '西式': '🍝 西餐模式：意面、牛排、披萨——地中海风味。',
+        '东南亚': '🍛 东南亚风味：咖喱浓郁、香料丰富——异域风情满满。',
+        '蛋类': '🥚 一颗蛋的无限可能：蒸、炒、煎、滑——简单又营养。',
+        '豆制品': '🫘 豆制品专场：麻婆豆腐、锅塌豆腐、红烧豆腐——植物蛋白担当。',
+        '砂锅煲': '🫕 砂锅慢炖：食材在砂锅里慢慢释放精华。',
+        '轻食沙拉': '🥗 轻食主义：低卡高纤，吃出轻盈体态。'
+      };
+
+      if (selected && selected !== '不限制') {
+        advice.push(typeAdvice[selected] || `为您筛选"${selected}"类型的菜谱。`);
+      } else {
+        advice.push('📋 未限制类型，所有菜谱都会参与匹配。选择类型可以更精准推荐。');
+      }
+
+      if (manual) {
+        advice.push(`📝 收到："<span class="highlight">${manual}</span>"——我会在筛选中优先考虑。`);
+      }
+
+      resultDiv.innerHTML = `<div class="ai-msg">${advice.join('</div><div class="ai-msg" style="margin-top:6px">')}</div>`;
+      resultDiv.classList.remove('hidden');
+    }
+
+    // ===== 烹饪步骤生成 =====
+    function generateSteps(recipe) {
+      const name = recipe.name;
+      const ings = recipe.ingredients;
+      const diff = recipe.difficulty;
+      const stepsByRecipe = {
+        '番茄炒蛋': ['番茄切块，鸡蛋打散加少许盐','热锅凉油，倒入蛋液炒至凝固盛出','锅中再加油，放入番茄翻炒出汁','加少许糖提鲜，倒回鸡蛋翻炒均匀','撒葱花出锅'],
+        '宫保鸡丁': ['鸡胸肉切丁，加料酒、淀粉、酱油腌制10分钟','花生米小火炒至微黄盛出','调碗汁：酱油、醋、糖、淀粉、水','热锅加油，爆香干辣椒和花椒','下鸡丁滑炒至变色，加青椒翻炒','倒入碗汁翻炒收汁，撒花生米和葱花'],
+        '可乐鸡翅': ['鸡翅洗净两面划刀，冷水下锅焯水去血沫','热锅少许油，鸡翅煎至两面金黄','倒入可乐没过鸡翅，加葱姜','大火烧开转中小火炖15分钟','开盖大火收汁至浓稠即可'],
+        '麻婆豆腐': ['豆腐切小方块，猪肉剁成末','豆腐焯水1分钟捞出备用','热锅加油，下肉末炒至变色','加豆瓣酱炒出红油，加花椒粉','加适量水烧开，下豆腐轻轻推匀','小火煮3分钟，水淀粉勾芡，撒蒜末葱花'],
+        '香煎三文鱼': ['三文鱼室温回温，用厨房纸吸干表面水分','两面撒盐和黑胡椒腌制5分钟','平底锅加少许油中火加热','鱼皮面朝下先煎3-4分钟至金黄','翻面再煎2-3分钟','挤上柠檬汁即可出锅'],
+        '糖醋里脊': ['猪肉切条，加盐、料酒腌制','调糖醋汁：番茄酱、糖、醋、水、淀粉','腌好的肉裹上淀粉和蛋液','油温六成热下锅炸至金黄捞出','锅中留底油，倒入糖醋汁煮至浓稠','下炸好的里脊快速翻匀出锅'],
+        '清蒸鲈鱼': ['鲈鱼处理干净，两面划几刀','鱼身抹少许盐和料酒，葱姜塞入鱼腹','盘中铺葱姜段，放上鱼','蒸锅水开后放入，大火蒸8-10分钟','倒掉盘中的腥水','淋上蒸鱼豉油，摆上葱丝，浇热油激香'],
+        '酸菜鱼': ['草鱼片成薄片，加盐、料酒、淀粉腌制','酸菜切段，干辣椒切段','热锅加油，爆香姜蒜和花椒','下酸菜翻炒出香味','加足量水烧开，先煮鱼骨3分钟','下鱼片滑煮1分钟至变白','撒干辣椒段和花椒，浇热油'],
+        '水煮牛肉': ['牛肉切薄片，加盐、料酒、淀粉腌制','豆芽焯水铺碗底','热锅加油，爆香干辣椒、花椒、蒜末','加豆瓣酱炒出红油','加水烧开，调味','下牛肉片滑煮变色立即捞出铺在豆芽上','撒蒜末、干辣椒粉，浇滚油'],
+        '红烧肉': ['五花肉切方块，冷水下锅焯水','热锅少许油，下肉块煎至表面微黄','加冰糖小火炒出糖色','加酱油、葱姜、八角翻炒上色','加开水没过肉，大火烧开转小火','炖40-50分钟至肉软烂','开盖大火收汁至浓稠'],
+        '回锅肉': ['五花肉整块冷水下锅煮至八成熟，捞出切薄片','青椒切块，蒜苗切段','热锅少许油，下肉片煸炒出油至微卷','加豆瓣酱炒出红油','加姜蒜片、青椒翻炒','加少许糖和酱油调味，下蒜苗翻匀出锅'],
+        '鱼香肉丝': ['猪肉切丝，加淀粉、酱油腌制','木耳泡发切丝，胡萝卜、青椒切丝','调鱼香汁：醋、糖、酱油、淀粉、水','热锅加油，下肉丝滑炒变色盛出','锅中加油，爆香姜蒜末','下胡萝卜、木耳、青椒翻炒','倒回肉丝，淋入鱼香汁翻炒均匀'],
+        '三文鱼沙拉': ['三文鱼切丁，牛油果切块','生菜洗净撕碎铺盘底','摆上三文鱼丁和牛油果','撒少许盐和黑胡椒','挤上柠檬汁和少许橄榄油','轻轻拌匀即可'],
+        '牛油果吐司': ['吐司烤至表面微黄','牛油果对半切开去核，用勺挖出果肉','用叉子将牛油果压成泥','涂抹在吐司上','煎一个太阳蛋放在上面','撒盐和黑胡椒即可'],
+        '咖喱牛肉': ['牛肉切块焯水','土豆、胡萝卜、洋葱切块','热锅加油，下洋葱炒香','加牛肉翻炒，加咖喱粉炒匀','倒入足量水，加土豆和胡萝卜','大火烧开转小火炖30分钟','加盐调味，收汁至浓稠'],
+        '地三鲜': ['土豆、茄子、青椒切滚刀块','土豆焯水2分钟，茄子过油或微波炉叮软','热锅加油，爆香蒜片','下土豆和茄子翻炒','加酱油、盐调味','下青椒翻炒至断生出锅'],
+        '蚝油生菜': ['生菜洗净，蒜切末','烧一锅水，加少许油和盐','水开后下生菜烫20秒捞出','热锅加油，爆香蒜末','加蚝油和少许水烧开','淋在生菜上即可'],
+        '番茄牛腩': ['牛肉切块焯水','番茄切块，土豆切块','热锅加油，炒香葱姜','下牛肉翻炒，加酱油上色','加足量开水，大火烧开转小火炖40分钟','加入番茄和土豆再炖20分钟','加盐调味出锅'],
+        '牛肉面': ['牛肉切块焯水，青菜洗净','热锅加油，炒香葱姜和牛肉','加酱油、料酒、香料包','加足量水炖40分钟至牛肉软烂','另起锅煮面条至八成熟','面条捞入碗中，浇上牛肉汤和牛肉','烫几根青菜摆在上面'],
+        '三文鱼炒饭': ['三文鱼切小丁，鸡蛋打散','米饭提前打散（隔夜饭最佳）','热锅加油，先炒鸡蛋盛出','锅中加油，下三文鱼丁煎至变色','倒入米饭翻炒均匀','加炒好的鸡蛋和青豆','加盐和酱油调味，撒葱花'],
+        '糖醋排骨': ['排骨斩小段，冷水下锅焯水沥干','调糖醋汁：糖、醋、番茄酱、酱油、水','热锅加油，下排骨煎至两面微黄','倒入糖醋汁，加姜片','大火烧开转小火炖25分钟','开盖大火收汁至浓稠挂满排骨','撒白芝麻点缀'],
+        '酸辣汤': ['木耳泡发切丝，豆腐切丝','鸡蛋打散备用','锅中加水烧开，下豆腐丝和木耳丝','加醋、酱油、胡椒粉调味','水淀粉勾芡搅匀','淋入蛋液搅成蛋花','撒葱花和香油出锅'],
+        '煲仔饭': ['大米提前泡30分钟','砂锅抹一层油，放入米加水','大火煮开转小火','待米饭七成熟时铺上腊肠片和青菜','沿锅边淋一圈油（这是锅巴的关键）','打入一个生鸡蛋','盖盖小火焖8分钟关火再焖5分钟','淋上煲仔饭酱油拌匀'],
+        '葱油拌面': ['小葱切段，只取葱绿部分','热锅加大量油，小火慢炸葱段','炸至葱段变深褐色捞出（这就是葱油）','碗中放酱油和少许糖','煮好的面条沥干水放入碗中','浇上滚烫的葱油快速拌匀','摆上炸好的葱段'],
+        '凉面': ['面条煮至八分熟捞出过凉水','沥干水分加少许香油拌匀防止粘连','芝麻酱用温水泻开','加入蒜泥、醋、酱油、辣椒油调成酱汁','黄瓜切丝铺在面上','浇上酱汁，撒花生碎拌匀'],
+        '红烧排骨': ['排骨斩段冷水下锅焯水沥干','热锅加油，下冰糖小火炒至棕色','下排骨翻炒上糖色','加葱姜、八角、酱油翻炒','加开水没过排骨','大火烧开转小火炖40分钟','开盖加盐收汁至浓稠'],
+        '酸辣土豆丝': ['土豆去皮切成细丝','切好的土豆丝泡入清水中去除淀粉','干辣椒切段，蒜切片','热锅加油，爆香干辣椒和蒜','沥干土豆丝大火快炒','加醋、盐翻炒1分钟','保持脆爽口感立即出锅'],
+        '口水鸡': ['鸡腿冷水下锅加姜葱煮至熟透','捞出过冰水后斩块装盘','调红油汁：辣椒油、花椒粉、酱油、醋、糖、蒜泥','将红油汁浇在鸡块上','撒芝麻和花生碎','撒葱花即可，吃前拌匀'],
+        '小炒肉': ['五花肉切薄片，青椒切块','热锅少许油，下五花肉煸炒出油','肉片微卷出现灯盏窝时盛出','锅中留底油，爆香姜蒜豆豉','下青椒翻炒至断生','倒回肉片，加酱油快速翻匀出锅'],
+        '滑蛋牛肉': ['牛肉切薄片，加料酒、淀粉、少许油腌制','鸡蛋打散加少许盐','热锅多油，下牛肉滑炒至变色盛出','锅洗净加少许油，倒入蛋液','蛋液边缘凝固时将牛肉铺在中间','用筷子轻轻推拨，蛋液八成熟时关火出锅']
+      };
+      if (stepsByRecipe[name]) return stepsByRecipe[name];
+
+      // 通用步骤生成
+      let steps = [];
+      const mainIng = ings.filter(i => !['葱','姜','蒜','盐','酱油','糖','醋','油','料酒','淀粉','黑胡椒','豆瓣酱','干辣椒','花椒','八角','咖喱粉'].includes(i));
+      if (ings.some(i => i.includes('肉') || i.includes('鸡') || i.includes('鱼') || i.includes('虾') || i.includes('扇贝'))) {
+        steps.push(`${mainIng[0] || '主料'}清洗处理干净，切成适口大小`);
+        if (diff === '中等') steps.push('加盐、料酒腌制10分钟入味');
+      }
+      steps.push('将配菜洗净切好备用');
+      if (ings.includes('蒜')) steps.push('大蒜切末/切片备用');
+      steps.push('热锅加适量油烧热');
+      if (ings.includes('姜') || ings.includes('蒜')) steps.push('爆香姜蒜出香味');
+      steps.push(`放入${mainIng[0] || '主料'}翻炒/烹饪至变色`);
+      const veg = ings.filter(i => ['青椒','青菜','蘑菇','番茄','土豆','洋葱','西兰花','黄瓜','胡萝卜','茄子','豆芽','韭菜','大白菜','菜心','芹菜','四季豆','生菜','金针菇','杏鲍菇','木耳','香菇','玉米','冬瓜','白萝卜','南瓜','红薯'].includes(i));
+      if (veg.length > 0) steps.push(`加入${veg.join('、')}继续翻炒`);
+      steps.push('加盐和调料调味');
+      if (name.includes('汤') || name.includes('炖') || name.includes('煮')) {
+        steps.push('加入足量水/高汤，煮至食材熟透');
+      }
+      steps.push('翻炒均匀后出锅装盘');
+      return steps;
+    }
+
+    function getVideoLinks(recipeName) {
+      const keyword = encodeURIComponent(recipeName + ' 做法 家常菜');
+      return [
+        { label: '📺 B站', url: `https://search.bilibili.com/all?keyword=${encodeURIComponent(recipeName + ' 做法')}`, cls: 'bili' },
+        { label: '🎬 小红书', url: `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(recipeName + ' 食谱')}`, cls: '' },
+        { label: '🍳 下厨房', url: `https://www.xiachufang.com/search/?keyword=${encodeURIComponent(recipeName)}`, cls: 'bili' }
+      ];
+    }
+
+    function expandRecipe(card, recipe) {
+      const detail = card.querySelector('.recipe-detail');
+      const isOpen = detail.classList.contains('open');
+      if (isOpen) {
+        detail.classList.remove('open');
+        return;
+      }
+      // 关闭其他已展开的
+      document.querySelectorAll('.recipe-detail.open').forEach(d => d.classList.remove('open'));
+
+      const steps = generateSteps(recipe);
+      const videos = getVideoLinks(recipe.name);
+      const tipMap = {
+        '香煎三文鱼': '三文鱼不要煎太久，中心带一点粉色口感最佳',
+        '宫保鸡丁': '花生米最后放，保持酥脆。碗汁提前调好，一气呵成',
+        '麻婆豆腐': '豆腐焯水后再煮不易碎，勾芡分两次加更均匀',
+        '糖醋里脊': '复炸一次更酥脆，糖醋汁大火收至冒大泡再下肉',
+        '清蒸鲈鱼': '蒸的时间跟鱼大小有关，1斤左右的鱼8分钟刚刚好',
+        '水煮牛肉': '牛肉滑油时火要大动作要快，变色即捞出才嫩',
+        '红烧肉': '炒糖色用小火，冒棕色泡沫时立刻下肉',
+        '可乐鸡翅': '收汁时不停翻动防止粘锅，汁要收到浓稠挂满鸡翅',
+        '番茄炒蛋': '鸡蛋不要炒太散，先盛出再和番茄混合更美观',
+        '回锅肉': '五花肉煮到筷子能插入即可，切得越薄越好吃',
+        '牛油果吐司': '牛油果选表皮深绿微软的最合适，太硬口感差太软已过熟',
+        '小炒肉': '五花肉切薄片煸出油才香，青椒不要炒太久保持脆嫩',
+        '白切鸡': '煮鸡的火候是关键，水开后转最小火浸熟，捞出过冰水皮才脆',
+        '卤牛肉': '牛肉先焯水再卤，卤好后不要急着切，冷藏一晚再切片不散',
+        '香辣蟹': '蟹要活的下锅，先炸后炒，壳红肉白即可出锅',
+        '酸辣粉': '红薯粉要提前泡软，辣椒油是灵魂，花生米和榨菜不能少',
+        '麻辣香锅': '食材分别过油断生，再一起下锅爆炒，花椒和干辣椒是灵魂',
+        '清蒸石斑鱼': '蒸鱼豉油提前加热，蒸好后倒掉腥水再淋酱汁',
+        '银耳汤': '银耳提前泡发4小时以上，剪去根部黄蒂，小火慢熬出胶质',
+        '牛肉面': '牛肉先焯水，香料包和牛肉一起炖，汤是精华可提前一天熬好'
+      };
+      const tip = tipMap[recipe.name];
+      detail.innerHTML = `
+        <div style="font-weight:600;color:#2c3e50;margin-bottom:8px">📝 烹饪步骤</div>
+        <ol class="step-list">${steps.map((s,i) => `<li><b>步骤${i+1}：</b>${s}</li>`).join('')}</ol>
+        ${tip ? `<div class="recipe-tip">💡 小贴士：${tip}</div>` : ''}
+        <div style="font-weight:600;color:#2c3e50;margin-top:12px;margin-bottom:6px">🎥 视频教程</div>
+        <div class="video-links">${videos.map(v => `<a class="video-link ${v.cls}" href="${v.url}" target="_blank">${v.label}</a>`).join('')}</div>
+      `;
+      detail.classList.add('open');
+    }
+    let currentPage = 1;
+    const perPage = 8;
+
+    function renderPagination(totalPages, totalCount) {
+      const pgDiv = document.getElementById('pagination');
+      if (totalPages <= 1) { pgDiv.innerHTML = ''; return; }
+      let html = '';
+      html += `<span class="page-btn ${currentPage===1?'disabled':''}" onclick="goPage(${currentPage-1})">◀ 上一页</span>`;
+      html += `<span class="page-info">共 ${totalCount} 道 · ${currentPage}/${totalPages}</span>`;
+      html += `<span class="page-btn ${currentPage===totalPages?'disabled':''}" onclick="goPage(${currentPage+1})">下一页 ▶</span>`;
+      pgDiv.innerHTML = html;
+    }
+
+    function goPage(p) {
+      currentPage = p;
+      render();
+      document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function render() {
+      const goal = getSelectedTag('goalTags');
+      const taste = getSelectedTag('tasteTags');
+      const dishType = getSelectedTag('typeTags');
+      const health = getSelectedTag('healthTags');
+      const healthManual = getManualInput('healthManual');
+      const goalManual = getManualInput('goalManual');
+      const tasteManual = getManualInput('tasteManual');
+      const typeManual = getManualInput('typeManual');
+
+      let allRecipes;
+      if (userIngredients.length > 0) {
+        allRecipes = filterRecipes(userIngredients, goal, taste, dishType);
+      } else {
+        allRecipes = recommendByProfile(goal, taste, dishType, health);
+      }
+      if (!allRecipes || allRecipes.length === 0) {
+        document.getElementById('recipeList').innerHTML = '<p style="text-align:center;padding:30px;color:#bf8040">😕 没有完全匹配的菜谱，试试减少条件或添加食材</p>';
+        document.getElementById('aiMessages').innerHTML = '<div class="message ai-msg">调整筛选条件后重试</div>';
+        document.getElementById('pagination').innerHTML = '';
+        document.getElementById('resultCard').classList.remove('hidden');
+        return;
+      }
+      window._allRecipes = allRecipes;
+      const totalPages = Math.ceil(allRecipes.length / perPage);
+      if (currentPage > totalPages) currentPage = totalPages;
+      if (currentPage < 1) currentPage = 1;
+      const selected = allRecipes.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+      const total = calculateNutrition(selected);
+      const { warnings, suggestions } = analyzeNutrition(total, goal);
+      const aiMessages = generateAIAdvice(allRecipes, total, goal, health, taste, healthManual, goalManual, tasteManual, typeManual);
+
+      // 菜谱列表
+      const recipeList = document.getElementById('recipeList');
+      recipeList.innerHTML = selected.map((r, idx) => {
+        const matchPct = Math.round((r.matchRate || 0) * 100);
+        const needToBuyArr = r.needToBuy || [];
+        const allIngs = r.ingredients || [];
+        const allHave = r._allHave || false;
+        let buyStr;
+        if (userIngredients.length === 0) {
+          buyStr = `<span style="color:#f57c00">📋 所需食材：${allIngs.join('、')}</span>`;
+        } else if (allHave) {
+          buyStr = '✅ 食材齐全';
+        } else {
+          buyStr = `<span class="missing">🛒 需采购：${needToBuyArr.join('、')}</span>`;
+        }
+        const searchTerms = encodeURIComponent(r.name.replace(/[()（）]/g,'') + ',中餐,家常菜,料理');
+        return `
+          <div class="recipe-card" onclick="expandRecipe(this, window._selectedRecipes[${idx}])">
+            <h3>${r.name}</h3>
+            <div class="recipe-meta">
+              <span class="meta-match">${userIngredients.length > 0 ? '匹配度' : '推荐指数'} ${matchPct}%</span>
+              <span class="recipe-tag">${r.taste}</span>
+              <span class="meta-difficulty">${r.difficulty}</span>
+              <span class="meta-time">${r.time} 分钟</span>
+            </div>
+            <div class="recipe-ingredients">${allIngs.join('、')} · ${buyStr}</div>
+            <div class="expand-hint">👆 点击查看详细步骤和视频教程</div>
+            <div class="recipe-detail"></div>
+          </div>`;
+      }).join('');
+      window._selectedRecipes = selected;
+
+      // 翻页
+      renderPagination(totalPages, allRecipes.length);
+
+      // AI建议
+      document.getElementById('aiMessages').innerHTML = aiMessages.map(m =>
+        `<div class="message ai-msg">${m}</div>`
+      ).join('');
+
+      // 营养总览
+      document.getElementById('nutritionSummary').innerHTML = `
+        <div class="summary-item"><div class="num">${total.calories}</div><div class="unit">热量 kcal</div></div>
+        <div class="summary-item"><div class="num">${total.protein}g</div><div class="unit">蛋白质</div></div>
+        <div class="summary-item"><div class="num">${total.carbs}g</div><div class="unit">碳水</div></div>
+        <div class="summary-item"><div class="num">${total.fat}g</div><div class="unit">脂肪</div></div>
+        <div class="summary-item"><div class="num">${total.fiber}g</div><div class="unit">纤维</div></div>
+        <div class="summary-item"><div class="num">${total.vitaminC}mg</div><div class="unit">维生素C</div></div>`;
+
+      // 营养进度条
+      const barNames = { calories: '热量', protein: '蛋白质', carbs: '碳水', fat: '脂肪', fiber: '纤维', vitaminC: '维生素C' };
+      const colors = { calories: '#e74c3c', protein: '#3498db', carbs: '#f39c12', fat: '#e67e22', fiber: '#27ae60', vitaminC: '#9b59b6' };
+      document.getElementById('nutritionBars').innerHTML = Object.keys(total).map(k => {
+        const pct = Math.min(100, Math.round((total[k] / dailyGoals[k]) * 100));
+        return `<div class="nutrition-bar"><span class="label">${barNames[k]}</span><div class="bar"><div class="fill" style="width:${pct}%;background:${colors[k]}"></div></div><span class="value">${pct}%</span></div>`;
+      }).join('');
+
+      // 警告和建议
+      document.getElementById('warnings').innerHTML = warnings.map(w => `<div class="warning">⚠️ ${w}</div>`).join('');
+      document.getElementById('suggestions').innerHTML = suggestions.map(s => `<div class="suggestion">💡 ${s}</div>`).join('');
+
+      document.getElementById('resultCard').classList.remove('hidden');
+      document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function generate() { currentPage = 1; render(); }
+
+    // ===== 背景装饰：随机浮动食材 =====
+    (function initBgDecor() {
+      const emojis = ['🍅','🥬','🥩','🍳','🧄','🥕','🍋','🧅','🌶️','🍚','🥑','🐟','🧈','🍆','🌽','🥦','🍤','🥟','🫕','🍜','🥘','🍲','🦐','🍄','🧀','🥒','🍠','🥚','🫒','🌿','🍗','🥓','🍖','🦀','🧂','🥔','🍯','🫘','🧆','🌮','🥗','🍱','🍣','🍛','🥩'];
+      const container = document.body;
+      const count = 80;
+      for (let i = 0; i < count; i++) {
+        const el = document.createElement('span');
+        el.className = 'bg-emoji';
+        el.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+        el.style.setProperty('--top', Math.random() * 100 + '%');
+        el.style.setProperty('--left', Math.random() * 100 + '%');
+        el.style.setProperty('--size', (22 + Math.random() * 30) + 'px');
+        el.style.setProperty('--duration', (15 + Math.random() * 30) + 's');
+        el.style.setProperty('--delay', Math.random() * -20 + 's');
+        container.insertBefore(el, container.firstChild);
+      }
+    })();
+  </script>
+</body>
+</html>
